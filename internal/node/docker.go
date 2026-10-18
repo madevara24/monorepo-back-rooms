@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 
 	dockertypes "github.com/docker/docker/api/types"
@@ -161,6 +162,9 @@ func (c *sdkClient) CreateTenantContainer(ctx context.Context, spec ContainerSpe
 		return Container{}, fmt.Errorf("create container: %w", err)
 	}
 	if err := c.cli.ContainerStart(ctx, created.ID, dockercontainer.StartOptions{}); err != nil {
+		if removeErr := c.cli.ContainerRemove(ctx, created.ID, dockercontainer.RemoveOptions{Force: true}); removeErr != nil {
+			log.Printf("node: docker: remove container %s after failed start: %v", created.ID, removeErr)
+		}
 		return Container{}, fmt.Errorf("start container: %w", err)
 	}
 

@@ -21,6 +21,10 @@ type fakeDocker struct {
 	usedPorts  map[int]bool
 	nextID     int
 	createErr  error
+	// startErr simulates ContainerCreate succeeding but ContainerStart
+	// failing: the real client must remove the created container in that
+	// case, so the fake mirrors that contract by never registering one.
+	startErr error
 }
 
 func newFakeDocker() *fakeDocker {
@@ -52,6 +56,14 @@ func (f *fakeDocker) CreateTenantContainer(_ context.Context, spec node.Containe
 	defer f.mu.Unlock()
 	if f.createErr != nil {
 		return node.Container{}, f.createErr
+	}
+	if f.startErr != nil {
+		// Mirrors sdkClient.CreateTenantContainer: ContainerCreate
+		// succeeded (nextID advances, as Docker would assign a new
+		// container ID) but ContainerStart failed, so the container is
+		// removed before returning and never becomes listable.
+		f.nextID++
+		return node.Container{}, f.startErr
 	}
 	f.nextID++
 	c := node.Container{
@@ -293,6 +305,55 @@ func TestCreateDatabaseCleansUpVolumeOnContainerFailure(t *testing.T) {
 
 	if volumes.has("db-d") {
 		t.Fatalf("volume for db-d was not cleaned up after container creation failed")
+	}
+}
+
+// TestCreateDatabaseRetryableAfterStartFailure covers ContainerCreate
+// succeeding but ContainerStart failing: no container or volume should
+// survive, and the id must not get stuck as "already exists" — a repeat
+// POST with the same id must retry creation rather than treating the
+// failed attempt as idempotent success.
+func TestCreateDatabaseRetryableAfterStartFailure(t *testing.T) {
+	docker := newFakeDocker()
+	docker.startErr = fmt.Errorf("container created but failed to start")
+	volumes := newFakeVolumes()
+	server := newTestServer(docker, volumes)
+	defer server.Close()
+
+	reqBody := map[string]any{"id": "db-f", "size_gb": 5, "password": "pw"}
+
+	resp := postJSON(t, server.URL+"/v1/databases", reqBody)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("POST /v1/databases with failing start = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+	_ = resp.Body.Close()
+
+	if volumes.has("db-f") {
+		t.Fatalf("volume for db-f was not cleaned up after container start failed")
+	}
+
+	resp, err := http.Get(server.URL + "/v1/databases")
+	if err != nil {
+		t.Fatalf("GET /v1/databases: %v", err)
+	}
+	var list []databaseResponse
+	decode(t, resp, &list)
+	if len(list) != 0 {
+		t.Fatalf("GET /v1/databases after failed start = %+v, want no orphaned container", list)
+	}
+
+	docker.startErr = nil
+	resp = postJSON(t, server.URL+"/v1/databases", reqBody)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("retry POST /v1/databases after clearing start error = %d, want %d (id must be retryable, not stuck)", resp.StatusCode, http.StatusCreated)
+	}
+	var out databaseResponse
+	decode(t, resp, &out)
+	if out.ID != "db-f" || out.Status != "running" {
+		t.Fatalf("retry create response = %+v, unexpected", out)
+	}
+	if !volumes.has("db-f") {
+		t.Fatalf("volume for db-f was not recreated on retry")
 	}
 }
 
