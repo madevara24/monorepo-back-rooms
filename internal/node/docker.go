@@ -136,6 +136,9 @@ func (c *sdkClient) CreateTenantContainer(ctx context.Context, spec ContainerSpe
 		Env: []string{
 			"POSTGRES_PASSWORD=" + spec.Password,
 			"POSTGRES_DB=postgres",
+			// The ext4 loop volume root contains lost+found, so Postgres
+			// must initialize in a subdirectory instead of the mount root.
+			"PGDATA=/var/lib/postgresql/data/pgdata",
 		},
 		ExposedPorts: nat.PortSet{containerPort: struct{}{}},
 		Labels: map[string]string{
