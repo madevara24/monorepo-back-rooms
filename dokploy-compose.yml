@@ -8,6 +8,10 @@ services:
       API_ADDR: ":8080"
       API_COOKIE_SECURE: "true"
       DATABASE_URL: ${DATABASE_URL}
+      CREDENTIAL_KEY: ${CREDENTIAL_KEY}
+      AGENT_CA_B64: ${AGENT_CA_B64}
+      AGENT_CLIENT_CERT_B64: ${AGENT_CLIENT_CERT_B64}
+      AGENT_CLIENT_KEY_B64: ${AGENT_CLIENT_KEY_B64}
     depends_on:
       mbr-control-db:
         condition: service_healthy
