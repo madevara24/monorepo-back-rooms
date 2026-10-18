@@ -1,2 +1,3 @@
 /bin/
 .pmrunner-task-*.md
+.env

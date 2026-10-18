@@ -6,9 +6,16 @@ import (
 	"net/http"
 )
 
-// Handler responds to GET requests with {"status":"ok"}.
-func Handler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+type response struct {
+	Status string `json:"status"`
+	Commit string `json:"commit"`
+}
+
+// NewHandler returns a liveness handler that reports the build's commit SHA.
+func NewHandler(commit string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(response{Status: "ok", Commit: commit})
+	}
 }

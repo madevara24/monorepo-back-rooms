@@ -17,13 +17,15 @@ type API struct {
 	// should be true behind TLS in production and false for local dev,
 	// where the browser talks to the Vite proxy over plain HTTP.
 	CookieSecure bool
+	// Commit is the build's git SHA, reported by GET /healthz.
+	Commit string
 }
 
 // NewMux builds the complete control-plane router.
 func NewMux(a *API) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", healthz.Handler)
+	mux.HandleFunc("GET /healthz", healthz.NewHandler(a.Commit))
 
 	mux.HandleFunc("POST /api/auth/signup", a.handleSignup)
 	mux.HandleFunc("POST /api/auth/login", a.handleLogin)

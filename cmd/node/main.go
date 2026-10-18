@@ -17,7 +17,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz.Handler)
+	mux.HandleFunc("GET /healthz", healthz.NewHandler(""))
 
 	log.Printf("node listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
