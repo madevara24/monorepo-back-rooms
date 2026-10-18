@@ -202,12 +202,12 @@ func TestDeleteJobSucceeds(t *testing.T) {
 	// the delete job queued after it.
 	drainJobs(t, ctx, w)
 
-	got, err := store.DatabaseByIDForUser(ctx, db, created.ID, user.ID)
-	if err != nil {
-		t.Fatalf("DatabaseByIDForUser: %v", err)
+	var dbStatus string
+	if err := db.QueryRow(`SELECT status FROM databases WHERE id = $1`, created.ID).Scan(&dbStatus); err != nil {
+		t.Fatalf("look up database status: %v", err)
 	}
-	if got.Status != "deleted" {
-		t.Fatalf("status = %q, want deleted", got.Status)
+	if dbStatus != "deleted" {
+		t.Fatalf("status = %q, want deleted", dbStatus)
 	}
 	if fake.deleteCalls.Load() != 1 {
 		t.Fatalf("agent delete calls = %d, want 1", fake.deleteCalls.Load())
