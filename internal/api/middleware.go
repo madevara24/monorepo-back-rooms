@@ -47,6 +47,19 @@ func userFromContext(r *http.Request) store.User {
 	return user
 }
 
+// requireAdmin wraps requireAuth and additionally rejects the request with
+// 403 if the signed-in user is not an admin. A missing or expired session
+// still 401s via requireAuth; 403 means "signed in, but not allowed here".
+func (a *API) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return a.requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if !userFromContext(r).IsAdmin {
+			writeError(w, http.StatusForbidden, "admin access required")
+			return
+		}
+		next(w, r)
+	})
+}
+
 func isNotFound(err error) bool {
 	return errors.Is(err, sql.ErrNoRows)
 }

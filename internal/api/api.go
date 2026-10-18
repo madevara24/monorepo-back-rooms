@@ -50,5 +50,11 @@ func NewMux(a *API) *http.ServeMux {
 	mux.HandleFunc("GET /api/billing/invoices", a.requireAuth(a.handleListInvoices))
 	mux.HandleFunc("POST /api/billing/invoices/{id}/pay", a.requireAuth(a.handlePayInvoice))
 
+	mux.HandleFunc("GET /api/admin/overview", a.requireAdmin(a.handleAdminOverview))
+	mux.HandleFunc("GET /api/admin/users", a.requireAdmin(a.handleAdminUsers))
+	mux.HandleFunc("GET /api/admin/databases", a.requireAdmin(a.handleAdminDatabases))
+	mux.HandleFunc("GET /api/admin/nodes", a.requireAdmin(a.handleAdminNodes))
+	mux.HandleFunc("GET /api/admin/jobs", a.requireAdmin(a.handleAdminJobs))
+
 	return mux
 }

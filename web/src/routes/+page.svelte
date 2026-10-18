@@ -3,6 +3,7 @@
 
 	let status: string = $state('checking...');
 	let signedIn: boolean = $state(false);
+	let isAdmin: boolean = $state(false);
 
 	async function checkHealth() {
 		try {
@@ -20,6 +21,10 @@
 		try {
 			const res = await fetch('/api/me');
 			signedIn = res.ok;
+			if (res.ok) {
+				const me = await res.json();
+				isAdmin = me.is_admin === true;
+			}
 		} catch {
 			signedIn = false;
 		}
@@ -32,7 +37,12 @@
 	<p>API status: <span class="font-mono">{status}</span></p>
 
 	{#if signedIn}
-		<a class="font-semibold underline" href="/dashboard">Go to dashboard</a>
+		<nav class="flex gap-4">
+			<a class="font-semibold underline" href="/dashboard">Go to dashboard</a>
+			{#if isAdmin}
+				<a class="font-semibold underline" href="/admin">Admin</a>
+			{/if}
+		</nav>
 	{:else}
 		<nav class="flex gap-4">
 			<a class="font-semibold underline" href="/signup">Sign up</a>
