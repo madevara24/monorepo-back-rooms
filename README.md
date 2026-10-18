@@ -34,3 +34,8 @@ go run ./cmd/node                 # :8081, GET /healthz
 
 cd web && npm install && npm run dev
 ```
+
+The web dev server proxies `/healthz` to the API at `http://localhost:8080`
+(see `web/vite.config.ts`), so `cmd/api` must be running for the home page to
+show `ok`. In production, deploy `web`'s static build behind the same host as
+the API so `/healthz` resolves same-origin, same as the proxy does in dev.

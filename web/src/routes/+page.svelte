@@ -1,11 +1,9 @@
 <script lang="ts">
-	const apiUrl = import.meta.env.VITE_API_URL ?? '';
-
 	let status: string = $state('checking...');
 
 	async function checkHealth() {
 		try {
-			const res = await fetch(`${apiUrl}/healthz`);
+			const res = await fetch('/healthz');
 			const body = await res.json();
 			status = body.status ?? 'unknown';
 		} catch {
