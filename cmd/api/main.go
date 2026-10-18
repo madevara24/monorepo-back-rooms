@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/madevara24/monorepo-back-rooms/internal/healthz"
+	"github.com/madevara24/monorepo-back-rooms/internal/api"
+	"github.com/madevara24/monorepo-back-rooms/internal/store"
 )
 
 func main() {
@@ -15,8 +16,25 @@ func main() {
 		addr = ":8080"
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz.Handler)
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = "postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable"
+	}
+
+	db, err := store.Open(databaseURL)
+	if err != nil {
+		log.Fatalf("connect to database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	if err := store.Migrate(db); err != nil {
+		log.Fatalf("migrate database: %v", err)
+	}
+
+	mux := api.NewMux(&api.API{
+		DB:           db,
+		CookieSecure: os.Getenv("API_COOKIE_SECURE") == "true",
+	})
 
 	log.Printf("api listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

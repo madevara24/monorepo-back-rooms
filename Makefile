@@ -9,8 +9,9 @@ dev:
 	wait
 
 test:
+	docker compose up -d control-db
 	go vet ./...
-	go test ./...
+	DATABASE_URL_TEST=postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable go test ./...
 	cd web && npm run check
 
 build:
