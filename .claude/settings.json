@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill",
+      "Agent",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "WebFetch",
+      "WebSearch",
+      "Bash(cd *)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(pwd)",
+      "Bash(echo *)",
+      "Bash(grep *)",
+      "Bash(sed *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(go *)",
+      "Bash(gofmt *)",
+      "Bash(golangci-lint *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(docker *)",
+      "Bash(docker-compose *)",
+      "Bash(make *)",
+      "Bash(python3 *)",
+      "Bash(curl *)",
+      "Bash(source *)",
+      "Bash(export *)"
+    ]
+  }
+}
