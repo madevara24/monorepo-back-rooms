@@ -188,7 +188,7 @@ func TestDeleteJobSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
-	if err := store.MarkDatabaseRunning(ctx, db, created.ID, "10.0.0.9", 21000); err != nil {
+	if _, err := store.MarkDatabaseRunning(ctx, db, created.ID, "10.0.0.9", 21000); err != nil {
 		t.Fatalf("MarkDatabaseRunning: %v", err)
 	}
 	if _, err := store.SetDatabaseDeletingAndQueueDelete(ctx, db, created.ID, user.ID); err != nil {
@@ -330,5 +330,75 @@ func TestProvisionJobFailsPermanentlyAfterMaxAttempts(t *testing.T) {
 	}
 	if eventCount != 1 {
 		t.Fatalf("failed events = %d, want 1", eventCount)
+	}
+}
+
+func TestProvisionJobSkipsWhenStatusMovedOn(t *testing.T) {
+	db := storetest.Open(t)
+	ctx := context.Background()
+	server, fake := newFakeAgentServer(t)
+	nodeID := insertNode(t, db, server.URL)
+	cipher := testCipher(t)
+
+	user, err := store.CreateUser(ctx, db, "superseded@example.com", "hash")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	encrypted, err := cipher.Encrypt("s3cr3t-password")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	created, err := store.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-super", nodeID, encrypted)
+	if err != nil {
+		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
+	}
+	// A delete moved the row on before the provision job ran.
+	if _, err := db.Exec(`UPDATE databases SET status = 'deleting' WHERE id = $1`, created.ID); err != nil {
+		t.Fatalf("move database on: %v", err)
+	}
+
+	w := &jobs.Worker{DB: db, Agent: agentclient.NewWithHTTPClient(server.Client()), Cipher: cipher, PollInterval: time.Second}
+	found, err := w.ProcessOne(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOne: %v", err)
+	}
+	if !found {
+		t.Fatalf("ProcessOne found no job, want the queued provision job")
+	}
+	if fake.createCalls.Load() != 0 {
+		t.Fatalf("agent create calls = %d, want 0 for a superseded provision", fake.createCalls.Load())
+	}
+	status, _ := jobStatusFor(t, db, created.ID)
+	if status != "succeeded" {
+		t.Fatalf("job status = %q, want succeeded", status)
+	}
+}
+
+func TestReclaimStaleRunningJob(t *testing.T) {
+	db := storetest.Open(t)
+	ctx := context.Background()
+
+	var jobID string
+	if err := db.QueryRow(`
+		INSERT INTO jobs (kind, payload, status, locked_at)
+		VALUES ('provision', '{"database_id":"00000000-0000-0000-0000-000000000000"}', 'running', now() - interval '11 minutes')
+		RETURNING id
+	`).Scan(&jobID); err != nil {
+		t.Fatalf("insert running job: %v", err)
+	}
+
+	n, err := store.ReclaimStaleJobs(ctx, db, 10*time.Minute)
+	if err != nil {
+		t.Fatalf("ReclaimStaleJobs: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("reclaimed = %d, want 1", n)
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM jobs WHERE id = $1`, jobID).Scan(&status); err != nil {
+		t.Fatalf("look up job: %v", err)
+	}
+	if status != "pending" {
+		t.Fatalf("job status = %q, want pending", status)
 	}
 }

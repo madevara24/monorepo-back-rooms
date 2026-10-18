@@ -342,6 +342,25 @@ func TestCreateDatabaseRequiresANode(t *testing.T) {
 	}
 }
 
+func TestCreateDatabaseSkipsFullNode(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "full-node@example.com")
+
+	if _, err := db.Exec(`
+		INSERT INTO nodes (id, name, address, token_hash, capacity, last_heartbeat)
+		VALUES ('node-full', 'node-full', 'https://agent.invalid:9443', 'hash',
+		        '{"ports_used":10,"ports_total":10}', now())
+	`); err != nil {
+		t.Fatalf("insert full node: %v", err)
+	}
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "size_gb": 5})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("POST /api/databases with a full node = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+}
+
 func TestCreateDatabaseValidatesSizeGB(t *testing.T) {
 	server, client, db := newTestServer(t)
 	signUp(t, server, client, "sizes@example.com")
@@ -437,6 +456,12 @@ func TestDeleteDatabaseQueuesJob(t *testing.T) {
 	}
 	decode(t, resp, &created)
 
+	if _, err := db.Exec(`
+		UPDATE databases SET status = 'running', host = '127.0.0.1', port = 21000 WHERE id = $1
+	`, created.ID); err != nil {
+		t.Fatalf("mark database running: %v", err)
+	}
+
 	req, err := http.NewRequest(http.MethodDelete, server.URL+"/api/databases/"+created.ID, nil)
 	if err != nil {
 		t.Fatalf("build delete request: %v", err)
@@ -463,6 +488,21 @@ func TestDeleteDatabaseQueuesJob(t *testing.T) {
 	if jobCount != 1 {
 		t.Fatalf("delete jobs queued = %d, want 1", jobCount)
 	}
+
+	// A second DELETE sees "deleting" and is rejected instead of queuing a
+	// duplicate job.
+	req, err = http.NewRequest(http.MethodDelete, server.URL+"/api/databases/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("build second delete request: %v", err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("second DELETE /api/databases/{id}: %v", err)
+	}
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("second DELETE /api/databases/{id} = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+	_ = resp.Body.Close()
 
 	// Deleting someone else's (or a nonexistent) database 404s.
 	req, err = http.NewRequest(http.MethodDelete, server.URL+"/api/databases/00000000-0000-0000-0000-000000000000", nil)
@@ -505,13 +545,13 @@ func TestListDatabasesHidesDeletedRows(t *testing.T) {
 		t.Fatalf("GET /api/databases = %v, want deleted row hidden", list)
 	}
 
-	// GET by id still returns it: hiding is a list-only behavior.
+	// GET by id hides a deleted row too, so a client cannot re-delete it.
 	resp, err = client.Get(server.URL + "/api/databases/" + deletedID)
 	if err != nil {
 		t.Fatalf("GET /api/databases/{id}: %v", err)
 	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /api/databases/{id} for a deleted row = %d, want %d", resp.StatusCode, http.StatusOK)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET /api/databases/{id} for a deleted row = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
 	_ = resp.Body.Close()
 }

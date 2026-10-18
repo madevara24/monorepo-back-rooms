@@ -79,3 +79,22 @@ func FailJob(ctx context.Context, db *sql.DB, id string, attempts int, lastErr s
 	`, id, attempts, lastErr)
 	return err
 }
+
+// ReclaimStaleJobs resets jobs stuck in "running" past their lease back to
+// pending. A process restart or a killed worker would otherwise strand the
+// database the job was driving forever. The agent's create and delete are
+// idempotent, so replaying the job is safe.
+func ReclaimStaleJobs(ctx context.Context, db *sql.DB, lease time.Duration) (int64, error) {
+	seconds := int(lease.Seconds())
+	res, err := db.ExecContext(ctx, `
+		UPDATE jobs
+		SET status = 'pending', run_at = now(), locked_at = NULL,
+		    last_error = COALESCE(NULLIF(last_error, '') || '; ', '') || 'reclaimed after lease timeout',
+		    updated_at = now()
+		WHERE status = 'running' AND locked_at < now() - make_interval(secs => $1)
+	`, seconds)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

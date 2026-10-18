@@ -12,6 +12,10 @@ import (
 // new slug and retry.
 var ErrSlugTaken = errors.New("slug already taken")
 
+// ErrInvalidState is returned when a transition is not allowed from the
+// row's current status, such as deleting an already-deleting database.
+var ErrInvalidState = errors.New("invalid state")
+
 const databaseColumns = `id, user_id, name, size_gb, status, slug, node_id, host, port, password_encrypted, created_at, updated_at`
 
 type rowScanner interface {
@@ -58,7 +62,7 @@ func DatabaseByIDForUser(ctx context.Context, db *sql.DB, id, userID string) (Da
 	row := db.QueryRowContext(ctx, `
 		SELECT `+databaseColumns+`
 		FROM databases
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND user_id = $2 AND status != 'deleted'
 	`, id, userID)
 	return scanDatabase(row)
 }
@@ -112,9 +116,22 @@ func SetDatabaseDeletingAndQueueDelete(ctx context.Context, db *sql.DB, id, user
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Lock the row first so two concurrent DELETE calls serialize: the
+	// second sees the "deleting" status the first wrote and is rejected
+	// instead of queuing a duplicate delete job.
+	var status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status FROM databases WHERE id = $1 AND user_id = $2 FOR UPDATE
+	`, id, userID).Scan(&status); err != nil {
+		return Database{}, err
+	}
+	if status != "running" && status != "failed" {
+		return Database{}, ErrInvalidState
+	}
+
 	row := tx.QueryRowContext(ctx, `
 		UPDATE databases SET status = 'deleting', updated_at = now()
-		WHERE id = $1 AND user_id = $2
+		WHERE id = $1 AND user_id = $2 AND status IN ('running', 'failed')
 		RETURNING `+databaseColumns, id, userID)
 	d, err := scanDatabase(row)
 	if err != nil {
@@ -161,31 +178,50 @@ func DatabaseForJob(ctx context.Context, db *sql.DB, id string) (DatabaseJobInfo
 }
 
 // MarkDatabaseRunning records that the agent confirmed a tenant container
-// is up, with the host and port the client will connect to.
-func MarkDatabaseRunning(ctx context.Context, db *sql.DB, id, host string, port int) error {
-	_, err := db.ExecContext(ctx, `
+// is up, with the host and port the client will connect to. It only
+// applies while the row is still provisioning, so a stale provision job
+// cannot resurrect a database that was deleted meanwhile. The bool is
+// false when the guard rejected the transition.
+func MarkDatabaseRunning(ctx context.Context, db *sql.DB, id, host string, port int) (bool, error) {
+	res, err := db.ExecContext(ctx, `
 		UPDATE databases SET status = 'running', host = $2, port = $3, updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND status = 'provisioning'
 	`, id, host, port)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // MarkDatabaseDeleted records that the agent removed a tenant container
-// and its volume.
-func MarkDatabaseDeleted(ctx context.Context, db *sql.DB, id string) error {
-	_, err := db.ExecContext(ctx, `
-		UPDATE databases SET status = 'deleted', updated_at = now() WHERE id = $1
+// and its volume. It only applies while the row is deleting, so a
+// duplicate delete job cannot mark an already-deleted row again.
+func MarkDatabaseDeleted(ctx context.Context, db *sql.DB, id string) (bool, error) {
+	res, err := db.ExecContext(ctx, `
+		UPDATE databases SET status = 'deleted', updated_at = now()
+		WHERE id = $1 AND status = 'deleting'
 	`, id)
-	return err
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // MarkDatabaseFailed records that a provision or delete job exhausted its
-// retries.
-func MarkDatabaseFailed(ctx context.Context, db *sql.DB, id string) error {
-	_, err := db.ExecContext(ctx, `
-		UPDATE databases SET status = 'failed', updated_at = now() WHERE id = $1
-	`, id)
-	return err
+// retries. fromStatus is the status the job observed, so a row that moved
+// on since then is not clobbered.
+func MarkDatabaseFailed(ctx context.Context, db *sql.DB, id, fromStatus string) (bool, error) {
+	res, err := db.ExecContext(ctx, `
+		UPDATE databases SET status = 'failed', updated_at = now()
+		WHERE id = $1 AND status = $2
+	`, id, fromStatus)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }
 
 // InsertDatabaseEvent appends a row to the database's status-transition

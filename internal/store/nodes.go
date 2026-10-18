@@ -24,14 +24,17 @@ func NodeByTokenHash(ctx context.Context, db *sql.DB, tokenHash string) (Node, e
 	return scanNode(row)
 }
 
-// AnyAvailableNode returns the node that heartbeated most recently, so a
-// new database lands on a node the control plane has actually heard from.
-// It returns sql.ErrNoRows if no node has ever heartbeated.
+// AnyAvailableNode returns the freshest node that still has room for
+// another tenant: it must have heartbeated in the last two minutes and
+// report fewer used ports than its total. It returns sql.ErrNoRows if no
+// node qualifies.
 func AnyAvailableNode(ctx context.Context, db *sql.DB) (Node, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT `+nodeColumns+`
 		FROM nodes
 		WHERE last_heartbeat IS NOT NULL
+		  AND last_heartbeat > now() - interval '2 minutes'
+		  AND COALESCE((capacity->>'ports_used')::int, 0) < COALESCE((capacity->>'ports_total')::int, 1)
 		ORDER BY last_heartbeat DESC
 		LIMIT 1
 	`)

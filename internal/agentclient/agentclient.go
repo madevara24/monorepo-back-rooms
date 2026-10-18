@@ -25,13 +25,6 @@ type Database struct {
 	Status string `json:"status"`
 }
 
-// Node is the agent's self-report, returned by GET /v1/node.
-type Node struct {
-	NodeID  string `json:"node_id"`
-	Host    string `json:"host"`
-	Version string `json:"version"`
-}
-
 // Client calls a single mbr-node agent over HTTP(S).
 type Client struct {
 	httpClient *http.Client
@@ -90,13 +83,6 @@ func (c *Client) CreateDatabase(ctx context.Context, address, id string, sizeGB 
 // tenant container and its volume.
 func (c *Client) DeleteDatabase(ctx context.Context, address, id string) error {
 	return c.do(ctx, http.MethodDelete, address+"/v1/databases/"+id, nil, nil)
-}
-
-// GetNode calls the agent's GET /v1/node.
-func (c *Client) GetNode(ctx context.Context, address string) (Node, error) {
-	var out Node
-	err := c.do(ctx, http.MethodGet, address+"/v1/node", nil, &out)
-	return out, err
 }
 
 func (c *Client) do(ctx context.Context, method, url string, body io.Reader, out any) error {

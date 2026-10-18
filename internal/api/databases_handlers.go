@@ -156,6 +156,10 @@ func (a *API) handleDeleteDatabase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "database not found")
 		return
 	}
+	if errors.Is(err, store.ErrInvalidState) {
+		writeError(w, http.StatusConflict, "database is not in a deletable state")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not delete database")
 		return

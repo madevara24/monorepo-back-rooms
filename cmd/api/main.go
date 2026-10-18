@@ -4,10 +4,13 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/internal/agentclient"
@@ -55,8 +58,10 @@ func main() {
 		log.Fatalf("configure agent client: %v", err)
 	}
 
-	worker := &jobs.Worker{DB: db, Agent: agent, Cipher: cipher, PollInterval: jobPollInterval}
-	go worker.Run(context.Background())
+	worker := &jobs.Worker{DB: db, Agent: agent, Cipher: cipher, PollInterval: jobPollInterval, LeaseTimeout: 10 * time.Minute}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go worker.Run(ctx)
 
 	mux := api.NewMux(&api.API{
 		DB:           db,
@@ -65,8 +70,16 @@ func main() {
 		Cipher:       cipher,
 	})
 
+	server := &http.Server{Addr: addr, Handler: mux}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
 	log.Printf("api listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 }
