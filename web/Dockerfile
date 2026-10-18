@@ -2,6 +2,9 @@
 FROM node:22-alpine AS build
 WORKDIR /src
 
+ARG PUBLIC_DOKPLOY_URL=""
+ENV PUBLIC_DOKPLOY_URL=$PUBLIC_DOKPLOY_URL
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

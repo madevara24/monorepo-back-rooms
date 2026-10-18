@@ -30,6 +30,8 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        PUBLIC_DOKPLOY_URL: ${PUBLIC_DOKPLOY_URL}
     restart: unless-stopped
     networks:
       - dokploy-network

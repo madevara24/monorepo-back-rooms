@@ -10,14 +10,21 @@ import (
 // registered.
 var ErrEmailTaken = errors.New("email already registered")
 
+const userColumns = `id, email, password_hash, is_admin, created_at`
+
+func scanUser(row rowScanner) (User, error) {
+	var u User
+	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.IsAdmin, &u.CreatedAt)
+	return u, err
+}
+
 // CreateUser inserts a new user and returns the row it created.
 func CreateUser(ctx context.Context, db *sql.DB, email, passwordHash string) (User, error) {
-	var u User
-	err := db.QueryRowContext(ctx, `
+	row := db.QueryRowContext(ctx, `
 		INSERT INTO users (email, password_hash)
 		VALUES ($1, $2)
-		RETURNING id, email, password_hash, created_at
-	`, email, passwordHash).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		RETURNING `+userColumns, email, passwordHash)
+	u, err := scanUser(row)
 	if isUniqueViolation(err) {
 		return User{}, ErrEmailTaken
 	}
@@ -27,24 +34,22 @@ func CreateUser(ctx context.Context, db *sql.DB, email, passwordHash string) (Us
 // UserByEmail looks up a user by email. It returns sql.ErrNoRows if none
 // matches.
 func UserByEmail(ctx context.Context, db *sql.DB, email string) (User, error) {
-	var u User
-	err := db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, created_at
+	row := db.QueryRowContext(ctx, `
+		SELECT `+userColumns+`
 		FROM users
 		WHERE email = $1
-	`, email).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
-	return u, err
+	`, email)
+	return scanUser(row)
 }
 
 // UserByID looks up a user by id. It returns sql.ErrNoRows if none matches.
 func UserByID(ctx context.Context, db *sql.DB, id string) (User, error) {
-	var u User
-	err := db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, created_at
+	row := db.QueryRowContext(ctx, `
+		SELECT `+userColumns+`
 		FROM users
 		WHERE id = $1
-	`, id).Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
-	return u, err
+	`, id)
+	return scanUser(row)
 }
 
 // isUniqueViolation reports whether err is a Postgres unique_violation

@@ -1,6 +1,7 @@
 export type User = {
 	id: string;
 	email: string;
+	is_admin: boolean;
 	created_at: string;
 };
 
@@ -20,6 +21,59 @@ export type Invoice = {
 	period_end: string;
 	created_at: string;
 	paid_at: string | null;
+};
+
+export type AdminOverview = {
+	users: number;
+	databases_by_status: Record<string, number>;
+	nodes_fresh: number;
+	nodes_stale: number;
+	jobs_by_status: Record<string, number>;
+};
+
+export type AdminUser = {
+	id: string;
+	email: string;
+	created_at: string;
+	database_count: number;
+};
+
+export type AdminDatabase = {
+	id: string;
+	name: string;
+	size_gb: number;
+	status: string;
+	owner_email: string;
+	node_id: string | null;
+	host: string | null;
+	port: number | null;
+	created_at: string;
+};
+
+export type AdminContainer = {
+	database_id: string;
+	status: string;
+	port: number;
+	updated_at: string;
+};
+
+export type AdminNode = {
+	id: string;
+	name: string;
+	address: string;
+	capacity: Record<string, unknown>;
+	version: string;
+	last_heartbeat: string | null;
+	containers: AdminContainer[];
+};
+
+export type AdminJob = {
+	id: string;
+	kind: string;
+	status: string;
+	attempts: number;
+	last_error: string | null;
+	created_at: string;
 };
 
 export function postJSON(path: string, body?: unknown): Promise<Response> {

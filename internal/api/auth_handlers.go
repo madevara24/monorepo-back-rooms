@@ -18,11 +18,12 @@ type credentials struct {
 type userResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
+	IsAdmin   bool      `json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toUserResponse(u store.User) userResponse {
-	return userResponse{ID: u.ID, Email: u.Email, CreatedAt: u.CreatedAt}
+	return userResponse{ID: u.ID, Email: u.Email, IsAdmin: u.IsAdmin, CreatedAt: u.CreatedAt}
 }
 
 func normalizeEmail(email string) string {
