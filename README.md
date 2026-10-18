@@ -66,6 +66,16 @@ Traefik routing `mbr.madevara.com`:
 
 The data plane, S3, and snapshots are out of scope for this cutover.
 
+`Dockerfile` derives the build's commit SHA by running `git rev-parse
+HEAD` inside the build stage, which assumes Dokploy's build context
+includes `.git` (true for a normal git clone, which is how Dokploy builds
+compose apps). If a deploy's `/healthz` ever reports `"commit":"unknown"`
+or the `Wait for the live commit to match` step in `deploy.yml` times out
+while logging a `last seen commit` that isn't the dispatched SHA, that
+assumption has broken; pass the correct SHA explicitly with
+`--build-arg COMMIT_SHA=<sha>` (wired into the Dockerfile as a fallback)
+until the build context is fixed.
+
 ### Production env vars
 
 Set these on the Dokploy `mbr` app (never committed; `.env` is

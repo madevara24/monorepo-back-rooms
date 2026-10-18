@@ -31,20 +31,24 @@ jobs:
           DOKPLOY_KEY: ${{ secrets.DOKPLOY_KEY }}
           DOKPLOY_MBR_COMPOSE_ID: ${{ secrets.DOKPLOY_MBR_COMPOSE_ID }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts \
-            "$VPS_USER@$VPS_HOST" \
-            "curl -fsS -X POST http://localhost:3000/api/compose.deploy -H 'x-api-key: $DOKPLOY_KEY' -H 'Content-Type: application/json' -d '{\"composeId\":\"$DOKPLOY_MBR_COMPOSE_ID\"}'"
+          ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" bash -s <<SCRIPT
+          curl -fsS -X POST http://localhost:3000/api/compose.deploy \
+            -H "x-api-key: $DOKPLOY_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"composeId\":\"$DOKPLOY_MBR_COMPOSE_ID\"}"
+          SCRIPT
 
       - name: Wait for the live commit to match
         run: |
+          last_seen=""
           deadline=$((SECONDS + 300))
           until [ "$SECONDS" -ge "$deadline" ]; do
-            commit=$(curl -fsS https://mbr.madevara.com/healthz 2>/dev/null | jq -r '.commit // empty')
-            if [ "$commit" = "$GITHUB_SHA" ]; then
+            last_seen=$(curl -fsS https://mbr.madevara.com/healthz 2>/dev/null | jq -r '.commit // empty')
+            if [ "$last_seen" = "$GITHUB_SHA" ]; then
               echo "healthz reports $GITHUB_SHA"
               exit 0
             fi
             sleep 5
           done
-          echo "timed out after 300s waiting for /healthz to report $GITHUB_SHA" >&2
+          echo "timed out after 300s waiting for /healthz to report $GITHUB_SHA (last seen commit: '$last_seen')" >&2
           exit 1
