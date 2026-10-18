@@ -10,6 +10,9 @@ import (
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
 )
 
+// commit is stamped at build time with -ldflags "-X main.commit=<sha>".
+var commit = "unknown"
+
 func main() {
 	addr := os.Getenv("API_ADDR")
 	if addr == "" {
@@ -34,6 +37,7 @@ func main() {
 	mux := api.NewMux(&api.API{
 		DB:           db,
 		CookieSecure: os.Getenv("API_COOKIE_SECURE") == "true",
+		Commit:       commit,
 	})
 
 	log.Printf("api listening on %s", addr)
