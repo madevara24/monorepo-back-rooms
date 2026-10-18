@@ -2,11 +2,13 @@ package store
 
 import "time"
 
-// User is a control-plane account.
+// User is a control-plane account. IsAdmin gates every /api/admin/* route;
+// it is set by a one-time SQL update, not an endpoint.
 type User struct {
 	ID           string
 	Email        string
 	PasswordHash string
+	IsAdmin      bool
 	CreatedAt    time.Time
 }
 
