@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
@@ -10,14 +11,25 @@ import (
 	"testing"
 
 	"github.com/madevara24/monorepo-back-rooms/internal/api"
+	"github.com/madevara24/monorepo-back-rooms/internal/credentials"
 	"github.com/madevara24/monorepo-back-rooms/internal/storetest"
 )
+
+func testCipher(t *testing.T) *credentials.Cipher {
+	t.Helper()
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	c, err := credentials.NewCipher(key)
+	if err != nil {
+		t.Fatalf("NewCipher: %v", err)
+	}
+	return c
+}
 
 func newTestServer(t *testing.T) (*httptest.Server, *http.Client, *sql.DB) {
 	t.Helper()
 	db := storetest.Open(t)
 
-	server := httptest.NewServer(api.NewMux(&api.API{DB: db}))
+	server := httptest.NewServer(api.NewMux(&api.API{DB: db, Cipher: testCipher(t)}))
 	t.Cleanup(server.Close)
 
 	jar, err := cookiejar.New(nil)
@@ -27,7 +39,20 @@ func newTestServer(t *testing.T) (*httptest.Server, *http.Client, *sql.DB) {
 	return server, &http.Client{Jar: jar}, db
 }
 
-func postJSON(t *testing.T, client *http.Client, url string, body map[string]string) *http.Response {
+// insertNode inserts a node row that has already heartbeated, so
+// store.AnyAvailableNode (and therefore POST /api/databases) can pick it.
+func insertNode(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO nodes (id, name, address, token_hash, last_heartbeat)
+		VALUES ($1, $1, 'https://agent.invalid:9443', $1 || '-token-hash', now())
+	`, id)
+	if err != nil {
+		t.Fatalf("insert node fixture: %v", err)
+	}
+}
+
+func postJSON(t *testing.T, client *http.Client, url string, body any) *http.Response {
 	t.Helper()
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -168,7 +193,7 @@ func signUp(t *testing.T, server *httptest.Server, client *http.Client, email st
 	}
 }
 
-func TestDatabasesListGetAndGating(t *testing.T) {
+func TestDatabasesListAndGet(t *testing.T) {
 	server, client, db := newTestServer(t)
 	signUp(t, server, client, "dbs@example.com")
 
@@ -230,25 +255,6 @@ func TestDatabasesListGetAndGating(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("GET /api/databases/{id} for another user's database = %d, want %d", resp.StatusCode, http.StatusNotFound)
-	}
-	_ = resp.Body.Close()
-
-	resp = postJSON(t, client, server.URL+"/api/databases", map[string]string{"name": "new", "size_gb": "5"})
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("POST /api/databases = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
-	}
-	_ = resp.Body.Close()
-
-	req, err := http.NewRequest(http.MethodDelete, server.URL+"/api/databases/"+dbID, nil)
-	if err != nil {
-		t.Fatalf("build delete request: %v", err)
-	}
-	resp, err = client.Do(req)
-	if err != nil {
-		t.Fatalf("DELETE /api/databases/{id}: %v", err)
-	}
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("DELETE /api/databases/{id} = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
 	}
 	_ = resp.Body.Close()
 
@@ -321,6 +327,191 @@ func TestBillingInvoices(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("paying a missing invoice = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestCreateDatabaseRequiresANode(t *testing.T) {
+	server, client, _ := newTestServer(t)
+	signUp(t, server, client, "no-node@example.com")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "size_gb": 5})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("POST /api/databases with no node = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+}
+
+func TestCreateDatabaseValidatesSizeGB(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "sizes@example.com")
+	insertNode(t, db, "node-sizes")
+
+	for _, size := range []int{0, 21, -1} {
+		resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "size_gb": size})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("POST /api/databases with size_gb=%d = %d, want %d", size, resp.StatusCode, http.StatusBadRequest)
+		}
+		_ = resp.Body.Close()
+	}
+}
+
+func TestCreateDatabaseProvisionsAndQueuesJob(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "create@example.com")
+	insertNode(t, db, "node-create")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "My Demo DB", "size_gb": 5})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var created struct {
+		ID       string `json:"id"`
+		Password string `json:"password"`
+	}
+	decode(t, resp, &created)
+	if created.ID == "" {
+		t.Fatalf("create response id is empty")
+	}
+	if len(created.Password) != 32 {
+		t.Fatalf("create response password length = %d, want 32", len(created.Password))
+	}
+
+	var status, slug string
+	var nodeID sql.NullString
+	var passwordEncrypted []byte
+	if err := db.QueryRow(`
+		SELECT status, slug, node_id, password_encrypted FROM databases WHERE id = $1
+	`, created.ID).Scan(&status, &slug, &nodeID, &passwordEncrypted); err != nil {
+		t.Fatalf("look up created database: %v", err)
+	}
+	if status != "provisioning" {
+		t.Fatalf("status = %q, want provisioning", status)
+	}
+	if slug == "" {
+		t.Fatalf("slug was not set")
+	}
+	if !nodeID.Valid || nodeID.String != "node-create" {
+		t.Fatalf("node_id = %+v, want node-create", nodeID)
+	}
+	if len(passwordEncrypted) == 0 {
+		t.Fatalf("password_encrypted was not set")
+	}
+	if string(passwordEncrypted) == created.Password {
+		t.Fatalf("password_encrypted stores the plaintext password")
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'provision' AND payload->>'database_id' = $1
+	`, created.ID).Scan(&jobCount); err != nil {
+		t.Fatalf("count provision jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("provision jobs queued = %d, want 1", jobCount)
+	}
+
+	// The list and get responses never carry the password.
+	resp, err := client.Get(server.URL + "/api/databases/" + created.ID)
+	if err != nil {
+		t.Fatalf("GET /api/databases/{id}: %v", err)
+	}
+	body := map[string]any{}
+	decode(t, resp, &body)
+	if _, ok := body["password"]; ok {
+		t.Fatalf("GET /api/databases/{id} response leaked a password field: %v", body)
+	}
+	if body["status"] != "provisioning" {
+		t.Fatalf("GET /api/databases/{id} status = %v, want provisioning", body["status"])
+	}
+}
+
+func TestDeleteDatabaseQueuesJob(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "delete@example.com")
+	insertNode(t, db, "node-delete")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "to-delete", "size_gb": 5})
+	var created struct {
+		ID string `json:"id"`
+	}
+	decode(t, resp, &created)
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/api/databases/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("build delete request: %v", err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/databases/{id}: %v", err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("DELETE /api/databases/{id} = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+	var deleted map[string]any
+	decode(t, resp, &deleted)
+	if deleted["status"] != "deleting" {
+		t.Fatalf("delete response status = %v, want deleting", deleted["status"])
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'delete' AND payload->>'database_id' = $1
+	`, created.ID).Scan(&jobCount); err != nil {
+		t.Fatalf("count delete jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("delete jobs queued = %d, want 1", jobCount)
+	}
+
+	// Deleting someone else's (or a nonexistent) database 404s.
+	req, err = http.NewRequest(http.MethodDelete, server.URL+"/api/databases/00000000-0000-0000-0000-000000000000", nil)
+	if err != nil {
+		t.Fatalf("build delete request: %v", err)
+	}
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE /api/databases/{id} for missing id: %v", err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("DELETE /api/databases/{id} for missing id = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestListDatabasesHidesDeletedRows(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "hides-deleted@example.com")
+
+	var userID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "hides-deleted@example.com").Scan(&userID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+
+	var deletedID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status) VALUES ($1, 'gone', 5, 'deleted') RETURNING id
+	`, userID).Scan(&deletedID); err != nil {
+		t.Fatalf("insert deleted database fixture: %v", err)
+	}
+
+	resp, err := client.Get(server.URL + "/api/databases")
+	if err != nil {
+		t.Fatalf("GET /api/databases: %v", err)
+	}
+	var list []map[string]any
+	decode(t, resp, &list)
+	if len(list) != 0 {
+		t.Fatalf("GET /api/databases = %v, want deleted row hidden", list)
+	}
+
+	// GET by id still returns it: hiding is a list-only behavior.
+	resp, err = client.Get(server.URL + "/api/databases/" + deletedID)
+	if err != nil {
+		t.Fatalf("GET /api/databases/{id}: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/databases/{id} for a deleted row = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 	_ = resp.Body.Close()
 }

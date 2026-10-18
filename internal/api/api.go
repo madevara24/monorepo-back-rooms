@@ -1,12 +1,15 @@
-// Package api wires the control-plane HTTP routes: auth, the gated
-// databases API, and billing. It never calls the data-plane agent and
-// never touches S3 — this slice runs without either.
+// Package api wires the control-plane HTTP routes: auth, the databases
+// API, the agent heartbeat endpoint, and billing. Provisioning and
+// deletion are carried out asynchronously by internal/jobs, which calls
+// the data-plane agent; this package only queues the work. It never
+// touches S3 — snapshots are out of scope for this slice.
 package api
 
 import (
 	"database/sql"
 	"net/http"
 
+	credpkg "github.com/madevara24/monorepo-back-rooms/internal/credentials"
 	"github.com/madevara24/monorepo-back-rooms/internal/healthz"
 )
 
@@ -19,6 +22,9 @@ type API struct {
 	CookieSecure bool
 	// Commit is the build's git SHA, reported by GET /healthz.
 	Commit string
+	// Cipher encrypts tenant database passwords at rest. It is required
+	// by POST /api/databases.
+	Cipher *credpkg.Cipher
 }
 
 // NewMux builds the complete control-plane router.
@@ -34,10 +40,12 @@ func NewMux(a *API) *http.ServeMux {
 
 	mux.HandleFunc("GET /api/databases", a.requireAuth(a.handleListDatabases))
 	mux.HandleFunc("GET /api/databases/{id}", a.requireAuth(a.handleGetDatabase))
-	mux.HandleFunc("POST /api/databases", a.requireAuth(a.handleCreateDatabaseGated))
-	mux.HandleFunc("DELETE /api/databases/{id}", a.requireAuth(a.handleDeleteDatabaseGated))
+	mux.HandleFunc("POST /api/databases", a.requireAuth(a.handleCreateDatabase))
+	mux.HandleFunc("DELETE /api/databases/{id}", a.requireAuth(a.handleDeleteDatabase))
 	mux.HandleFunc("GET /api/databases/{id}/snapshots", a.requireAuth(a.handleSnapshotsGated))
 	mux.HandleFunc("POST /api/databases/{id}/snapshots", a.requireAuth(a.handleSnapshotsGated))
+
+	mux.HandleFunc("POST /api/agent/heartbeat", a.handleAgentHeartbeat)
 
 	mux.HandleFunc("GET /api/billing/invoices", a.requireAuth(a.handleListInvoices))
 	mux.HandleFunc("POST /api/billing/invoices/{id}/pay", a.requireAuth(a.handlePayInvoice))
