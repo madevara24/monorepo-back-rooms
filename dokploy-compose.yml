@@ -19,7 +19,7 @@ services:
       - "traefik.http.routers.mbr-api.rule=Host(`mbr.madevara.com`) && (PathPrefix(`/api`) || Path(`/healthz`))"
       - "traefik.http.routers.mbr-api.priority=10"
       - "traefik.http.routers.mbr-api.entrypoints=websecure"
-      - "traefik.http.routers.mbr-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.mbr-api.tls=true"
       - "traefik.http.services.mbr-api.loadbalancer.server.port=8080"
 
   mbr-web:
@@ -35,7 +35,7 @@ services:
       - "traefik.http.routers.mbr-web.rule=Host(`mbr.madevara.com`)"
       - "traefik.http.routers.mbr-web.priority=1"
       - "traefik.http.routers.mbr-web.entrypoints=websecure"
-      - "traefik.http.routers.mbr-web.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.mbr-web.tls=true"
       - "traefik.http.services.mbr-web.loadbalancer.server.port=80"
 
   mbr-control-db:
