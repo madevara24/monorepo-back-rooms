@@ -279,6 +279,10 @@
 					<p>Database created. This password is shown once and will not be shown again.</p>
 					<p>Password: <span class="font-mono">{created.password}</span></p>
 					<p class="break-all font-mono text-xs">{created.connection_string}</p>
+					<p class="text-xs text-gray-600">
+						Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
+						support). Older client versions may fail to connect.
+					</p>
 				</div>
 			{/if}
 

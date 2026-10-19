@@ -44,6 +44,14 @@ func PublicHost(slug string) string {
 // instead of routing to the default backend. sslrootcert=system points
 // libpq at the OS trust store instead of ~/.postgresql/root.crt, which
 // postgres:17 clients don't have.
+//
+// sslnegotiation=direct requires a PostgreSQL 17+ aware client: psql
+// 17+, libpq 17+ (so psycopg2/psycopg3 need a matching system libpq),
+// jackc/pgx v5.7.5+, node-postgres (pg) v8.22.0+, pgjdbc v42.7.4+, or
+// asyncpg v0.32.0+ (earlier asyncpg versions parse the DSN keyword but
+// omit the ALPN PostgreSQL 17 requires, so direct negotiation silently
+// fails). Older client versions fall back to indirect negotiation with
+// no client-side error, which the proxy then misroutes.
 func ConnectionString(slug, password string) string {
 	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system", password, PublicHost(slug), PublicPort)
 }

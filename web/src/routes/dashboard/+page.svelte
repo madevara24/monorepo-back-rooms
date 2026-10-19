@@ -203,6 +203,10 @@
 								{copied ? 'Copied' : 'Copy'}
 							</button>
 						</div>
+						<p class="text-xs text-gray-600">
+							Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
+							support). Older client versions may fail to connect.
+						</p>
 					{:else if createdDatabase?.status === 'failed'}
 						<p class="text-red-600">Provisioning failed. Delete this database and try again.</p>
 					{:else}
