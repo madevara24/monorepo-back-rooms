@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -231,4 +232,107 @@ func AdminListJobs(ctx context.Context, db *sql.DB) ([]Job, error) {
 		out = append(out, j)
 	}
 	return out, rows.Err()
+}
+
+// AdminForceDeleteDatabase moves any owner's database to "deleting" and
+// queues the "delete" job that will remove it, regardless of who owns it.
+// It mirrors SetDatabaseDeletingAndQueueDelete but without the owner
+// scope, since an admin can force-delete a database it does not own. It
+// returns sql.ErrNoRows if id does not exist, and ErrInvalidState if the
+// row is not "running" or "failed". There is no final snapshot: this is
+// the same settled test-stage decision as the tenant delete path.
+func AdminForceDeleteDatabase(ctx context.Context, db *sql.DB, id string) (Database, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Database{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Lock the row first so two concurrent calls serialize: the second
+	// sees the "deleting" status the first wrote and is rejected instead
+	// of queuing a duplicate delete job.
+	var status string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status FROM databases WHERE id = $1 FOR UPDATE
+	`, id).Scan(&status); err != nil {
+		return Database{}, err
+	}
+	if status != "running" && status != "failed" {
+		return Database{}, ErrInvalidState
+	}
+
+	row := tx.QueryRowContext(ctx, `
+		UPDATE databases SET status = 'deleting', updated_at = now()
+		WHERE id = $1 AND status IN ('running', 'failed')
+		RETURNING `+databaseColumns, id)
+	d, err := scanDatabase(row)
+	if err != nil {
+		return Database{}, err
+	}
+
+	payload, err := json.Marshal(map[string]string{"database_id": d.ID})
+	if err != nil {
+		return Database{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (kind, payload) VALUES ('delete', $1)`, payload); err != nil {
+		return Database{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Database{}, err
+	}
+	return d, nil
+}
+
+// AdminRetryDatabase requeues a "failed" database's last operation. A
+// database that never finished provisioning has no host yet, so it moves
+// back to "provisioning" and gets a fresh provision job; one that failed
+// while being deleted still carries the host and port it had while
+// running, so it moves back to "deleting" and gets a fresh delete job.
+// It returns sql.ErrNoRows if id does not exist, and ErrInvalidState if
+// the row is not "failed".
+func AdminRetryDatabase(ctx context.Context, db *sql.DB, id string) (Database, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Database{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var status string
+	var host sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT status, host FROM databases WHERE id = $1 FOR UPDATE
+	`, id).Scan(&status, &host); err != nil {
+		return Database{}, err
+	}
+	if status != "failed" {
+		return Database{}, ErrInvalidState
+	}
+
+	newStatus, jobKind := "provisioning", "provision"
+	if host.Valid {
+		newStatus, jobKind = "deleting", "delete"
+	}
+
+	row := tx.QueryRowContext(ctx, `
+		UPDATE databases SET status = $2, updated_at = now()
+		WHERE id = $1 AND status = 'failed'
+		RETURNING `+databaseColumns, id, newStatus)
+	d, err := scanDatabase(row)
+	if err != nil {
+		return Database{}, err
+	}
+
+	payload, err := json.Marshal(map[string]string{"database_id": d.ID})
+	if err != nil {
+		return Database{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (kind, payload) VALUES ($1, $2)`, jobKind, payload); err != nil {
+		return Database{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Database{}, err
+	}
+	return d, nil
 }

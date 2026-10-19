@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"net/http"
@@ -73,14 +74,71 @@ type createDatabaseResponse struct {
 	Password string `json:"password"`
 }
 
-// maxSlugAttempts bounds how many times handleCreateDatabase retries a
-// fresh random slug after a collision, before giving up.
+// maxSlugAttempts bounds how many times provisionDatabase retries a fresh
+// random slug after a collision, before giving up.
 const maxSlugAttempts = 5
 
-// handleCreateDatabase provisions a new tenant database: it picks a node,
-// generates a slug and a password, encrypts the password at rest, and
-// queues the "provision" job that will carry the row to "running". The
-// plaintext password is returned here and only here.
+// errNoSlugAvailable is returned by provisionDatabase when every slug
+// attempt collided.
+var errNoSlugAvailable = errors.New("could not generate a unique slug")
+
+// provisionDatabase is the one provisioning path shared by the tenant's
+// POST /api/databases and the admin's POST /api/admin/databases: it picks
+// a node, generates a slug and a password, encrypts the password at rest,
+// and queues the "provision" job that will carry the row to "running".
+// The plaintext password is returned here and only here. It returns
+// whatever error store.AnyAvailableNode produced (sql.ErrNoRows when no
+// node is free) so the caller can map it to the right status code.
+func (a *API) provisionDatabase(ctx context.Context, userID, name string, sizeGB int) (store.Database, string, error) {
+	node, err := store.AnyAvailableNode(ctx, a.DB)
+	if err != nil {
+		return store.Database{}, "", err
+	}
+
+	password, err := randomPassword()
+	if err != nil {
+		return store.Database{}, "", err
+	}
+	encrypted, err := a.Cipher.Encrypt(password)
+	if err != nil {
+		return store.Database{}, "", err
+	}
+
+	var created store.Database
+	for attempt := 0; attempt < maxSlugAttempts; attempt++ {
+		slug, err := newSlug(name)
+		if err != nil {
+			return store.Database{}, "", err
+		}
+
+		created, err = store.CreateDatabaseAndQueueProvision(ctx, a.DB, userID, name, sizeGB, slug, node.ID, encrypted)
+		if errors.Is(err, store.ErrSlugTaken) {
+			continue
+		}
+		if err != nil {
+			return store.Database{}, "", err
+		}
+		break
+	}
+	if created.ID == "" {
+		return store.Database{}, "", errNoSlugAvailable
+	}
+
+	return created, password, nil
+}
+
+func validateCreateDatabaseRequest(name string, sizeGB int) string {
+	if strings.TrimSpace(name) == "" {
+		return "name is required"
+	}
+	if sizeGB < 1 || sizeGB > 20 {
+		return "size_gb must be between 1 and 20"
+	}
+	return ""
+}
+
+// handleCreateDatabase provisions a new tenant database through
+// provisionDatabase, scoped to the signed-in user.
 func (a *API) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r)
 
@@ -89,56 +147,18 @@ func (a *API) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	if req.SizeGB < 1 || req.SizeGB > 20 {
-		writeError(w, http.StatusBadRequest, "size_gb must be between 1 and 20")
+	if msg := validateCreateDatabaseRequest(req.Name, req.SizeGB); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
-	node, err := store.AnyAvailableNode(r.Context(), a.DB)
+	created, password, err := a.provisionDatabase(r.Context(), user.ID, req.Name, req.SizeGB)
 	if isNotFound(err) {
 		writeError(w, http.StatusServiceUnavailable, "no node available")
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not find a node")
-		return
-	}
-
-	password, err := randomPassword()
-	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create database")
-		return
-	}
-	encrypted, err := a.Cipher.Encrypt(password)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "could not create database")
-		return
-	}
-
-	var created store.Database
-	for attempt := 0; attempt < maxSlugAttempts; attempt++ {
-		slug, err := newSlug(req.Name)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not create database")
-			return
-		}
-
-		created, err = store.CreateDatabaseAndQueueProvision(r.Context(), a.DB, user.ID, req.Name, req.SizeGB, slug, node.ID, encrypted)
-		if errors.Is(err, store.ErrSlugTaken) {
-			continue
-		}
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "could not create database")
-			return
-		}
-		break
-	}
-	if created.ID == "" {
-		writeError(w, http.StatusInternalServerError, "could not generate a unique slug")
 		return
 	}
 
