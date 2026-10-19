@@ -33,6 +33,17 @@ const postgresContainerPort = "5432/tcp"
 
 // Paths the wildcard TLS cert and key are mounted at inside every tenant
 // container, regardless of where the agent found them on the host.
+//
+// Postgres refuses to start if ssl_key_file is readable by anyone but the
+// server: the host-side key must be owned by root or by the container's
+// postgres user (uid 999 in postgres:17) with mode 0600, or owned by root
+// with mode 0640 and a group the postgres process belongs to (the image
+// ships a "ssl-cert" group, gid 101, for exactly this). Bind mounts carry
+// the host file's numeric uid/gid as-is, so infra must set one of those
+// combinations when it places the wildcard key on the host; a wrong mode
+// or owner fails every tenant creation with a clear error in the
+// container's logs ("private key file ... must be owned by ..." or "...
+// has group or world access"), not a silent one.
 const (
 	tenantTLSCertMountPath = "/run/mbr-node/tenant.crt"
 	tenantTLSKeyMountPath  = "/run/mbr-node/tenant.key"

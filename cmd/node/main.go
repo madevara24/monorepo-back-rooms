@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -46,6 +47,9 @@ func main() {
 	tenantTLSCert := os.Getenv("AGENT_TENANT_TLS_CERT")
 	tenantTLSKey := os.Getenv("AGENT_TENANT_TLS_KEY")
 	if err := requireTLSEnv(tlsCert, tlsKey, clientCA, tenantTLSCert, tenantTLSKey); err != nil {
+		log.Fatal(err)
+	}
+	if err := validateTenantTLSFiles(tenantTLSCert, tenantTLSKey); err != nil {
 		log.Fatal(err)
 	}
 
@@ -112,6 +116,19 @@ func requireTLSEnv(tlsCert, tlsKey, clientCA, tenantTLSCert, tenantTLSKey string
 	}
 	if tenantTLSCert == "" || tenantTLSKey == "" {
 		return errors.New("AGENT_TENANT_TLS_CERT and AGENT_TENANT_TLS_KEY are required")
+	}
+	return nil
+}
+
+// validateTenantTLSFiles confirms the tenant wildcard cert and key exist
+// and parse as a valid key pair, exactly like serverTLSConfig does for the
+// agent's own mTLS material below. Without this, a bad path or corrupt
+// file would not fail until the first CreateTenantContainer call (and
+// then every subsequent one), turning a startup-time problem into a
+// provisioning outage discovered in production.
+func validateTenantTLSFiles(certPath, keyPath string) error {
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		return fmt.Errorf("load tenant TLS cert/key: %w", err)
 	}
 	return nil
 }
