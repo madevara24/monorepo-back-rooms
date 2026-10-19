@@ -10,6 +10,8 @@ export type Database = {
 	name: string;
 	size_gb: number;
 	status: string;
+	host: string | null;
+	port: number | null;
 	created_at: string;
 };
 
