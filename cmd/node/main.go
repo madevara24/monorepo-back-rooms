@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -42,8 +43,10 @@ func main() {
 	tlsCert := os.Getenv("AGENT_TLS_CERT")
 	tlsKey := os.Getenv("AGENT_TLS_KEY")
 	clientCA := os.Getenv("AGENT_CLIENT_CA")
-	if tlsCert == "" || tlsKey == "" || clientCA == "" {
-		log.Fatal("AGENT_TLS_CERT, AGENT_TLS_KEY, and AGENT_CLIENT_CA are required")
+	tenantTLSCert := os.Getenv("AGENT_TENANT_TLS_CERT")
+	tenantTLSKey := os.Getenv("AGENT_TENANT_TLS_KEY")
+	if err := requireTLSEnv(tlsCert, tlsKey, clientCA, tenantTLSCert, tenantTLSKey); err != nil {
+		log.Fatal(err)
 	}
 
 	controlURL := os.Getenv("CONTROL_URL")
@@ -56,12 +59,14 @@ func main() {
 
 	n := &node.Node{
 		Config: node.Config{
-			NodeID:      nodeID,
-			HostAddress: hostAddress,
-			Image:       image,
-			PortMin:     portMin,
-			PortMax:     portMax,
-			Version:     commit,
+			NodeID:            nodeID,
+			HostAddress:       hostAddress,
+			Image:             image,
+			PortMin:           portMin,
+			PortMax:           portMax,
+			Version:           commit,
+			TenantTLSCertPath: tenantTLSCert,
+			TenantTLSKeyPath:  tenantTLSKey,
 		},
 		Docker:  node.NewDockerClient(cli),
 		Volumes: node.NewLoopVolumeManager(dataDir),
@@ -94,6 +99,21 @@ func main() {
 	if err := server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// requireTLSEnv validates the agent's mTLS listener env (cert, key, and
+// client CA) and the tenant wildcard TLS env (cert and key mounted into
+// every tenant container) are all set. Infra is responsible for placing
+// the tenant cert/key on the host; the agent only requires that it knows
+// where to find them.
+func requireTLSEnv(tlsCert, tlsKey, clientCA, tenantTLSCert, tenantTLSKey string) error {
+	if tlsCert == "" || tlsKey == "" || clientCA == "" {
+		return errors.New("AGENT_TLS_CERT, AGENT_TLS_KEY, and AGENT_CLIENT_CA are required")
+	}
+	if tenantTLSCert == "" || tenantTLSKey == "" {
+		return errors.New("AGENT_TENANT_TLS_CERT and AGENT_TENANT_TLS_KEY are required")
+	}
+	return nil
 }
 
 // serverTLSConfig builds an mTLS config that requires every client to
