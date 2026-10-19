@@ -81,7 +81,7 @@ func TestWriteAtomicMissingDirectoryErrors(t *testing.T) {
 
 func TestConnectionString(t *testing.T) {
 	got := routes.ConnectionString("demo-ab12", "s3cr3t")
-	want := "postgres://postgres:s3cr3t@demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=verify-full"
+	want := "postgres://postgres:s3cr3t@demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system"
 	if got != want {
 		t.Fatalf("ConnectionString = %q, want %q", got, want)
 	}

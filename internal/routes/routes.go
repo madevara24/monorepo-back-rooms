@@ -38,8 +38,14 @@ func PublicHost(slug string) string {
 // ConnectionString returns the full client-facing connection string for
 // slug and password. The password is only ever available to the caller
 // once, at creation time.
+//
+// sslnegotiation=direct skips the plaintext Postgres SSLRequest, so
+// nginx's ssl_preread sees the TLS ClientHello's SNI on the first packet
+// instead of routing to the default backend. sslrootcert=system points
+// libpq at the OS trust store instead of ~/.postgresql/root.crt, which
+// postgres:17 clients don't have.
 func ConnectionString(slug, password string) string {
-	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full", password, PublicHost(slug), PublicPort)
+	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system", password, PublicHost(slug), PublicPort)
 }
 
 // Render renders routes as the proxy's map file, one line per route
