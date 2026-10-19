@@ -2,12 +2,15 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { env as publicEnv } from '$env/dynamic/public';
-	import type {
-		AdminDatabase,
-		AdminJob,
-		AdminNode,
-		AdminOverview,
-		AdminUser
+	import {
+		errorMessage,
+		postJSON,
+		type AdminDatabase,
+		type AdminJob,
+		type AdminNode,
+		type AdminOverview,
+		type AdminUser,
+		type CreateDatabaseResult
 	} from '$lib/api';
 
 	const dokployURL = publicEnv.PUBLIC_DOKPLOY_URL ?? '';
@@ -21,12 +24,30 @@
 	let nodes: AdminNode[] = $state([]);
 	let jobs: AdminJob[] = $state([]);
 
+	let createUserId: string = $state('');
+	let createName: string = $state('');
+	let createSizeGB: number = $state(1);
+	let creating: boolean = $state(false);
+	let createError: string = $state('');
+	let created: CreateDatabaseResult | null = $state(null);
+
+	let actionError: string = $state('');
+	let actionTarget: string = $state('');
+
 	async function loadJSON<T>(path: string): Promise<T> {
 		const res = await fetch(path);
 		if (!res.ok) {
 			throw new Error(`could not load ${path} (${res.status})`);
 		}
 		return res.json();
+	}
+
+	async function reloadDatabasesAndOverview() {
+		[overview, databases, jobs] = await Promise.all([
+			loadJSON<AdminOverview>('/api/admin/overview'),
+			loadJSON<AdminDatabase[]>('/api/admin/databases'),
+			loadJSON<AdminJob[]>('/api/admin/jobs')
+		]);
 	}
 
 	onMount(async () => {
@@ -49,6 +70,9 @@
 				loadJSON<AdminNode[]>('/api/admin/nodes'),
 				loadJSON<AdminJob[]>('/api/admin/jobs')
 			]);
+			if (users.length > 0) {
+				createUserId = users[0].id;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'could not load admin data';
 		} finally {
@@ -60,6 +84,65 @@
 		const entries = Object.entries(counts);
 		if (entries.length === 0) return 'none';
 		return entries.map(([status, count]) => `${status}: ${count}`).join(', ');
+	}
+
+	async function handleCreate(event: SubmitEvent) {
+		event.preventDefault();
+		createError = '';
+		created = null;
+		creating = true;
+		try {
+			const res = await postJSON('/api/admin/databases', {
+				user_id: createUserId,
+				name: createName,
+				size_gb: createSizeGB
+			});
+			if (!res.ok) {
+				createError = await errorMessage(res);
+				return;
+			}
+			created = await res.json();
+			createName = '';
+			await reloadDatabasesAndOverview();
+		} finally {
+			creating = false;
+		}
+	}
+
+	async function handleDelete(db: AdminDatabase) {
+		if (!confirm(`Delete database "${db.name}" (owned by ${db.owner_email})? This cannot be undone.`)) {
+			return;
+		}
+		actionError = '';
+		actionTarget = db.id;
+		try {
+			const res = await fetch(`/api/admin/databases/${db.id}`, { method: 'DELETE' });
+			if (!res.ok) {
+				actionError = await errorMessage(res);
+				return;
+			}
+			await reloadDatabasesAndOverview();
+		} finally {
+			actionTarget = '';
+		}
+	}
+
+	async function handleRetry(db: AdminDatabase) {
+		if (!confirm(`Retry database "${db.name}" (owned by ${db.owner_email})?`)) {
+			return;
+		}
+		actionError = '';
+		actionTarget = db.id;
+		try {
+			const res = await postJSON(`/api/admin/databases/${db.id}/retry`);
+			if (!res.ok) {
+				actionError = await errorMessage(res);
+				return;
+			}
+			await reloadDatabasesAndOverview();
+		} finally {
+			actionTarget = '';
+		}
 	}
 </script>
 
@@ -154,6 +237,54 @@
 
 		<section class="flex flex-col gap-2">
 			<h2 class="text-xl font-semibold">Databases</h2>
+
+			<form class="flex flex-wrap items-end gap-3 rounded border p-3" onsubmit={handleCreate}>
+				<label class="flex flex-col gap-1 text-sm">
+					User
+					<select class="rounded border px-3 py-2" bind:value={createUserId} required>
+						{#each users as u (u.id)}
+							<option value={u.id}>{u.email}</option>
+						{/each}
+					</select>
+				</label>
+				<label class="flex flex-col gap-1 text-sm">
+					Name
+					<input class="rounded border px-3 py-2" type="text" bind:value={createName} required />
+				</label>
+				<label class="flex flex-col gap-1 text-sm">
+					Size (GB)
+					<input
+						class="w-24 rounded border px-3 py-2"
+						type="number"
+						min="1"
+						max="20"
+						bind:value={createSizeGB}
+						required
+					/>
+				</label>
+				<button
+					class="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+					disabled={creating || users.length === 0}
+				>
+					Create
+				</button>
+			</form>
+
+			{#if createError}
+				<p class="text-sm text-red-600">{createError}</p>
+			{/if}
+
+			{#if created}
+				<p class="rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
+					Database created. This password is shown once and will not be shown again:
+					<span class="font-mono">{created.password}</span>
+				</p>
+			{/if}
+
+			{#if actionError}
+				<p class="text-sm text-red-600">{actionError}</p>
+			{/if}
+
 			{#if databases.length === 0}
 				<p>No databases yet.</p>
 			{:else}
@@ -167,6 +298,7 @@
 							<th class="py-2">Host</th>
 							<th class="py-2">Port</th>
 							<th class="py-2">Created</th>
+							<th class="py-2">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -179,6 +311,28 @@
 								<td class="py-2">{db.host ?? '-'}</td>
 								<td class="py-2">{db.port ?? '-'}</td>
 								<td class="py-2">{new Date(db.created_at).toLocaleString()}</td>
+								<td class="py-2">
+									<div class="flex gap-2">
+										{#if db.status === 'running' || db.status === 'failed'}
+											<button
+												class="rounded border border-red-600 px-2 py-1 text-xs text-red-600 disabled:opacity-50"
+												disabled={actionTarget === db.id}
+												onclick={() => handleDelete(db)}
+											>
+												Delete
+											</button>
+										{/if}
+										{#if db.status === 'failed'}
+											<button
+												class="rounded border px-2 py-1 text-xs disabled:opacity-50"
+												disabled={actionTarget === db.id}
+												onclick={() => handleRetry(db)}
+											>
+												Retry
+											</button>
+										{/if}
+									</div>
+								</td>
 							</tr>
 						{/each}
 					</tbody>

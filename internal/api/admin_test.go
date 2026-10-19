@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func doRequest(t *testing.T, client *http.Client, method, url string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		t.Fatalf("build %s %s: %v", method, url, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	return resp
+}
+
 func promoteToAdmin(t *testing.T, db *sql.DB, email string) {
 	t.Helper()
 	if _, err := db.Exec(`UPDATE users SET is_admin = true WHERE email = $1`, email); err != nil {
@@ -262,4 +275,308 @@ func TestAdminJobsReturnsRecentJobs(t *testing.T) {
 	if rows[0]["kind"] != "provision" {
 		t.Fatalf("admin jobs row kind = %v, want provision", rows[0]["kind"])
 	}
+}
+
+func TestAdminWriteRoutesRejectNonAdmin(t *testing.T) {
+	server, client, _ := newTestServer(t)
+	signUp(t, server, client, "plain-write-user@example.com")
+
+	resp := postJSON(t, client, server.URL+"/api/admin/databases", map[string]any{
+		"user_id": "00000000-0000-0000-0000-000000000000", "name": "demo", "size_gb": 5,
+	})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /api/admin/databases for non-admin = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+	_ = resp.Body.Close()
+
+	resp = doRequest(t, client, http.MethodDelete, server.URL+"/api/admin/databases/00000000-0000-0000-0000-000000000000")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("DELETE /api/admin/databases/{id} for non-admin = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+	_ = resp.Body.Close()
+
+	resp = doRequest(t, client, http.MethodPost, server.URL+"/api/admin/databases/00000000-0000-0000-0000-000000000000/retry")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST /api/admin/databases/{id}/retry for non-admin = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-create@example.com")
+	promoteToAdmin(t, db, "admin-create@example.com")
+	insertNode(t, db, "node-admin-create")
+
+	var ownerID string
+	if err := db.QueryRow(`
+		INSERT INTO users (email, password_hash) VALUES ('admin-create-owner@example.com', 'x') RETURNING id
+	`).Scan(&ownerID); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+
+	resp := postJSON(t, client, server.URL+"/api/admin/databases", map[string]any{
+		"user_id": ownerID, "name": "admin-made", "size_gb": 5,
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/admin/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var created struct {
+		ID       string `json:"id"`
+		Password string `json:"password"`
+	}
+	decode(t, resp, &created)
+	if created.ID == "" {
+		t.Fatalf("create response id is empty")
+	}
+	if len(created.Password) != 32 {
+		t.Fatalf("create response password length = %d, want 32", len(created.Password))
+	}
+
+	var userID, status string
+	if err := db.QueryRow(`SELECT user_id, status FROM databases WHERE id = $1`, created.ID).Scan(&userID, &status); err != nil {
+		t.Fatalf("look up created database: %v", err)
+	}
+	if userID != ownerID {
+		t.Fatalf("created database user_id = %q, want %q", userID, ownerID)
+	}
+	if status != "provisioning" {
+		t.Fatalf("created database status = %q, want provisioning", status)
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'provision' AND payload->>'database_id' = $1
+	`, created.ID).Scan(&jobCount); err != nil {
+		t.Fatalf("count provision jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("provision jobs queued = %d, want 1", jobCount)
+	}
+}
+
+func TestAdminCreateDatabaseValidatesSizeGB(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-create-sizes@example.com")
+	promoteToAdmin(t, db, "admin-create-sizes@example.com")
+	insertNode(t, db, "node-admin-sizes")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-create-sizes@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+
+	for _, size := range []int{0, 21, -1} {
+		resp := postJSON(t, client, server.URL+"/api/admin/databases", map[string]any{
+			"user_id": ownerID, "name": "demo", "size_gb": size,
+		})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("POST /api/admin/databases with size_gb=%d = %d, want %d", size, resp.StatusCode, http.StatusBadRequest)
+		}
+		_ = resp.Body.Close()
+	}
+}
+
+func TestAdminCreateDatabaseUnknownUserIsNotFound(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-create-unknown@example.com")
+	promoteToAdmin(t, db, "admin-create-unknown@example.com")
+	insertNode(t, db, "node-admin-unknown")
+
+	resp := postJSON(t, client, server.URL+"/api/admin/databases", map[string]any{
+		"user_id": "00000000-0000-0000-0000-000000000000", "name": "demo", "size_gb": 5,
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("POST /api/admin/databases for unknown user = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestAdminDeleteDatabaseForcesAnyOwnersRunningOrFailedRow(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-delete@example.com")
+	promoteToAdmin(t, db, "admin-delete@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`
+		INSERT INTO users (email, password_hash) VALUES ('admin-delete-owner@example.com', 'x') RETURNING id
+	`).Scan(&ownerID); err != nil {
+		t.Fatalf("insert owner: %v", err)
+	}
+	var databaseID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status, host, port)
+		VALUES ($1, 'owned-elsewhere', 5, 'running', '127.0.0.1', 21000)
+		RETURNING id
+	`, ownerID).Scan(&databaseID); err != nil {
+		t.Fatalf("insert running database fixture: %v", err)
+	}
+
+	resp := doRequest(t, client, http.MethodDelete, server.URL+"/api/admin/databases/"+databaseID)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("DELETE /api/admin/databases/{id} = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+	var deleted map[string]any
+	decode(t, resp, &deleted)
+	if deleted["status"] != "deleting" {
+		t.Fatalf("delete response status = %v, want deleting", deleted["status"])
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'delete' AND payload->>'database_id' = $1
+	`, databaseID).Scan(&jobCount); err != nil {
+		t.Fatalf("count delete jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("delete jobs queued = %d, want 1", jobCount)
+	}
+}
+
+func TestAdminDeleteDatabaseMissingIsNotFound(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-delete-missing@example.com")
+	promoteToAdmin(t, db, "admin-delete-missing@example.com")
+
+	resp := doRequest(t, client, http.MethodDelete, server.URL+"/api/admin/databases/00000000-0000-0000-0000-000000000000")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("DELETE /api/admin/databases/{id} for missing id = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestAdminDeleteDatabaseWrongStateIsConflict(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-delete-wrong-state@example.com")
+	promoteToAdmin(t, db, "admin-delete-wrong-state@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-delete-wrong-state@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+	var databaseID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status) VALUES ($1, 'still-provisioning', 5, 'provisioning') RETURNING id
+	`, ownerID).Scan(&databaseID); err != nil {
+		t.Fatalf("insert provisioning database fixture: %v", err)
+	}
+
+	resp := doRequest(t, client, http.MethodDelete, server.URL+"/api/admin/databases/"+databaseID)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("DELETE /api/admin/databases/{id} for a provisioning row = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestAdminRetryDatabaseReprovisionsAFailedProvision(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-retry-provision@example.com")
+	promoteToAdmin(t, db, "admin-retry-provision@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-retry-provision@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+	var databaseID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status) VALUES ($1, 'never-ran', 5, 'failed') RETURNING id
+	`, ownerID).Scan(&databaseID); err != nil {
+		t.Fatalf("insert failed database fixture: %v", err)
+	}
+
+	resp := doRequest(t, client, http.MethodPost, server.URL+"/api/admin/databases/"+databaseID+"/retry")
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /api/admin/databases/{id}/retry = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+	var retried map[string]any
+	decode(t, resp, &retried)
+	if retried["status"] != "provisioning" {
+		t.Fatalf("retry response status = %v, want provisioning", retried["status"])
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'provision' AND payload->>'database_id' = $1
+	`, databaseID).Scan(&jobCount); err != nil {
+		t.Fatalf("count provision jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("provision jobs queued = %d, want 1", jobCount)
+	}
+}
+
+func TestAdminRetryDatabaseRequeuesAFailedDelete(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-retry-delete@example.com")
+	promoteToAdmin(t, db, "admin-retry-delete@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-retry-delete@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+	var databaseID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status, host, port)
+		VALUES ($1, 'delete-kept-failing', 5, 'failed', '127.0.0.1', 21000)
+		RETURNING id
+	`, ownerID).Scan(&databaseID); err != nil {
+		t.Fatalf("insert failed database fixture: %v", err)
+	}
+
+	resp := doRequest(t, client, http.MethodPost, server.URL+"/api/admin/databases/"+databaseID+"/retry")
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /api/admin/databases/{id}/retry = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+	var retried map[string]any
+	decode(t, resp, &retried)
+	if retried["status"] != "deleting" {
+		t.Fatalf("retry response status = %v, want deleting", retried["status"])
+	}
+
+	var jobCount int
+	if err := db.QueryRow(`
+		SELECT count(*) FROM jobs WHERE kind = 'delete' AND payload->>'database_id' = $1
+	`, databaseID).Scan(&jobCount); err != nil {
+		t.Fatalf("count delete jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("delete jobs queued = %d, want 1", jobCount)
+	}
+}
+
+func TestAdminRetryDatabaseMissingIsNotFound(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-retry-missing@example.com")
+	promoteToAdmin(t, db, "admin-retry-missing@example.com")
+
+	resp := doRequest(t, client, http.MethodPost, server.URL+"/api/admin/databases/00000000-0000-0000-0000-000000000000/retry")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("POST /api/admin/databases/{id}/retry for missing id = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestAdminRetryDatabaseWrongStateIsConflict(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-retry-wrong-state@example.com")
+	promoteToAdmin(t, db, "admin-retry-wrong-state@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-retry-wrong-state@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+	var databaseID string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status, host, port)
+		VALUES ($1, 'still-running', 5, 'running', '127.0.0.1', 21000)
+		RETURNING id
+	`, ownerID).Scan(&databaseID); err != nil {
+		t.Fatalf("insert running database fixture: %v", err)
+	}
+
+	resp := doRequest(t, client, http.MethodPost, server.URL+"/api/admin/databases/"+databaseID+"/retry")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("POST /api/admin/databases/{id}/retry for a running row = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+	_ = resp.Body.Close()
 }

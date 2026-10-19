@@ -76,6 +76,11 @@ export type AdminJob = {
 	created_at: string;
 };
 
+export type CreateDatabaseResult = {
+	id: string;
+	password: string;
+};
+
 export function postJSON(path: string, body?: unknown): Promise<Response> {
 	return fetch(path, {
 		method: 'POST',

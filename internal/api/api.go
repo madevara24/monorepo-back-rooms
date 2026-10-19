@@ -53,6 +53,9 @@ func NewMux(a *API) *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/overview", a.requireAdmin(a.handleAdminOverview))
 	mux.HandleFunc("GET /api/admin/users", a.requireAdmin(a.handleAdminUsers))
 	mux.HandleFunc("GET /api/admin/databases", a.requireAdmin(a.handleAdminDatabases))
+	mux.HandleFunc("POST /api/admin/databases", a.requireAdmin(a.handleAdminCreateDatabase))
+	mux.HandleFunc("DELETE /api/admin/databases/{id}", a.requireAdmin(a.handleAdminDeleteDatabase))
+	mux.HandleFunc("POST /api/admin/databases/{id}/retry", a.requireAdmin(a.handleAdminRetryDatabase))
 	mux.HandleFunc("GET /api/admin/nodes", a.requireAdmin(a.handleAdminNodes))
 	mux.HandleFunc("GET /api/admin/jobs", a.requireAdmin(a.handleAdminJobs))
 

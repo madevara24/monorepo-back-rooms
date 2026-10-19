@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
@@ -140,6 +142,93 @@ func (a *API) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+type adminCreateDatabaseRequest struct {
+	UserID string `json:"user_id"`
+	Name   string `json:"name"`
+	SizeGB int    `json:"size_gb"`
+}
+
+// handleAdminCreateDatabase provisions a database for any user through
+// provisionDatabase, the same path POST /api/databases uses for the
+// signed-in tenant. The plaintext password is returned here and only
+// here, exactly once.
+func (a *API) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Request) {
+	var req adminCreateDatabaseRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		writeError(w, http.StatusBadRequest, "user_id is required")
+		return
+	}
+	if msg := validateCreateDatabaseRequest(req.Name, req.SizeGB); msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	if _, err := store.UserByID(r.Context(), a.DB, req.UserID); isNotFound(err) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not look up user")
+		return
+	}
+
+	created, password, err := a.provisionDatabase(r.Context(), req.UserID, req.Name, req.SizeGB)
+	if isNotFound(err) {
+		writeError(w, http.StatusServiceUnavailable, "no node available")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create database")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, createDatabaseResponse{ID: created.ID, Password: password})
+}
+
+// handleAdminDeleteDatabase force-deletes any owner's database: it moves
+// a "running" or "failed" row to "deleting" and queues a fresh delete
+// job. There is no final snapshot: this is the same settled test-stage
+// decision as the tenant delete path.
+func (a *API) handleAdminDeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	d, err := store.AdminForceDeleteDatabase(r.Context(), a.DB, r.PathValue("id"))
+	if isNotFound(err) {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if errors.Is(err, store.ErrInvalidState) {
+		writeError(w, http.StatusConflict, "database is not in a deletable state")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not delete database")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, toDatabaseResponse(d))
+}
+
+// handleAdminRetryDatabase requeues a "failed" database's last
+// operation: back to "provisioning" if it never finished provisioning,
+// or back to "deleting" if it failed while being deleted.
+func (a *API) handleAdminRetryDatabase(w http.ResponseWriter, r *http.Request) {
+	d, err := store.AdminRetryDatabase(r.Context(), a.DB, r.PathValue("id"))
+	if isNotFound(err) {
+		writeError(w, http.StatusNotFound, "database not found")
+		return
+	}
+	if errors.Is(err, store.ErrInvalidState) {
+		writeError(w, http.StatusConflict, "database is not in a retryable state")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not retry database")
+		return
+	}
+	writeJSON(w, http.StatusAccepted, toDatabaseResponse(d))
 }
 
 type adminJobResponse struct {
