@@ -275,10 +275,11 @@
 			{/if}
 
 			{#if created}
-				<p class="rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
-					Database created. This password is shown once and will not be shown again:
-					<span class="font-mono">{created.password}</span>
-				</p>
+				<div class="flex flex-col gap-1 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
+					<p>Database created. This password is shown once and will not be shown again.</p>
+					<p>Password: <span class="font-mono">{created.password}</span></p>
+					<p class="break-all font-mono text-xs">{created.connection_string}</p>
+				</div>
 			{/if}
 
 			{#if actionError}

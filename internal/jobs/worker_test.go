@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/madevara24/monorepo-back-rooms/internal/agentclient"
 	"github.com/madevara24/monorepo-back-rooms/internal/credentials"
 	"github.com/madevara24/monorepo-back-rooms/internal/jobs"
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
 	"github.com/madevara24/monorepo-back-rooms/internal/storetest"
 )
@@ -371,6 +374,63 @@ func TestProvisionJobSkipsWhenStatusMovedOn(t *testing.T) {
 	status, _ := jobStatusFor(t, db, created.ID)
 	if status != "succeeded" {
 		t.Fatalf("job status = %q, want succeeded", status)
+	}
+}
+
+func TestProvisionAndDeleteReconcileRoutes(t *testing.T) {
+	db := storetest.Open(t)
+	ctx := context.Background()
+	server, _ := newFakeAgentServer(t)
+	nodeID := insertNode(t, db, server.URL)
+	cipher := testCipher(t)
+
+	user, err := store.CreateUser(ctx, db, "routes@example.com", "hash")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	encrypted, err := cipher.Encrypt("s3cr3t-password")
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	created, err := store.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-route1", nodeID, encrypted)
+	if err != nil {
+		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
+	}
+
+	routesPath := filepath.Join(t.TempDir(), "mbr-routes.map")
+	w := &jobs.Worker{
+		DB: db, Agent: agentclient.NewWithHTTPClient(server.Client()), Cipher: cipher, PollInterval: time.Second,
+		Routes: &routes.Reconciler{DB: db, Path: routesPath},
+	}
+
+	found, err := w.ProcessOne(ctx)
+	if err != nil {
+		t.Fatalf("ProcessOne (provision): %v", err)
+	}
+	if !found {
+		t.Fatalf("ProcessOne found no job, want the queued provision job")
+	}
+
+	got, err := os.ReadFile(routesPath)
+	if err != nil {
+		t.Fatalf("read routes file after provision: %v", err)
+	}
+	want := "demo-route1.db.mbr.madevara.com 10.0.0.9:21000;\n"
+	if string(got) != want {
+		t.Fatalf("routes file after provision = %q, want %q", got, want)
+	}
+
+	if _, err := store.SetDatabaseDeletingAndQueueDelete(ctx, db, created.ID, user.ID); err != nil {
+		t.Fatalf("SetDatabaseDeletingAndQueueDelete: %v", err)
+	}
+	drainJobs(t, ctx, w)
+
+	got, err = os.ReadFile(routesPath)
+	if err != nil {
+		t.Fatalf("read routes file after delete: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("routes file after delete = %q, want empty", got)
 	}
 }
 

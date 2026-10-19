@@ -14,6 +14,7 @@ import (
 
 	"github.com/madevara24/monorepo-back-rooms/internal/agentclient"
 	"github.com/madevara24/monorepo-back-rooms/internal/credentials"
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
 )
 
@@ -32,6 +33,23 @@ type Worker struct {
 	// LeaseTimeout is how long a job may sit in "running" before it is
 	// reclaimed. Zero means 10 minutes.
 	LeaseTimeout time.Duration
+	// Routes reconciles the SNI proxy's host map after a provision or
+	// delete job changes which databases are running. Nil disables this
+	// (tests that don't care about the routes file leave it unset).
+	Routes *routes.Reconciler
+}
+
+// reconcileRoutes reconciles the routes file if Routes is configured,
+// logging rather than failing the job on error: a stale route map is a
+// proxy-side problem the next tick or job will correct, not a reason to
+// retry work that already succeeded.
+func (w *Worker) reconcileRoutes(ctx context.Context) {
+	if w.Routes == nil {
+		return
+	}
+	if _, err := w.Routes.Reconcile(ctx); err != nil {
+		log.Printf("jobs: reconcile routes: %v", err)
+	}
 }
 
 // Run claims and processes due jobs until ctx is canceled, draining the
@@ -174,6 +192,7 @@ func (w *Worker) provision(ctx context.Context, databaseID string) error {
 	if err := store.InsertDatabaseEvent(ctx, w.DB, databaseID, info.Status, "running", nil); err != nil {
 		log.Printf("jobs: record running event for %s: %v", databaseID, err)
 	}
+	w.reconcileRoutes(ctx)
 	return nil
 }
 
@@ -202,5 +221,6 @@ func (w *Worker) delete(ctx context.Context, databaseID string) error {
 	if err := store.InsertDatabaseEvent(ctx, w.DB, databaseID, info.Status, "deleted", nil); err != nil {
 		log.Printf("jobs: record deleted event for %s: %v", databaseID, err)
 	}
+	w.reconcileRoutes(ctx)
 	return nil
 }
