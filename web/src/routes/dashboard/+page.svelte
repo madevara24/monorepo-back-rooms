@@ -15,6 +15,7 @@
 
 	let createdID: string = $state('');
 	let createdPassword: string = $state('');
+	let createdConnectionString: string = $state('');
 	let copied: boolean = $state(false);
 
 	let actionError: string = $state('');
@@ -24,11 +25,7 @@
 
 	const monthlyPriceIDR = $derived(createSizeGB * 10000);
 	const createdDatabase = $derived(databases.find((d) => d.id === createdID) ?? null);
-	const connectionString = $derived(
-		createdDatabase && createdDatabase.host && createdDatabase.port
-			? `postgres://postgres:${createdPassword}@${createdDatabase.host}:${createdDatabase.port}/postgres?sslmode=disable`
-			: ''
-	);
+	const connectionString = $derived(createdDatabase?.status === 'running' ? createdConnectionString : '');
 
 	function pollDatabase(id: string) {
 		if (pollTimers.has(id)) return;
@@ -95,6 +92,7 @@
 			const result: CreateDatabaseResult = await res.json();
 			createdID = result.id;
 			createdPassword = result.password;
+			createdConnectionString = result.connection_string;
 			copied = false;
 			createName = '';
 			createSizeGB = 1;
@@ -113,6 +111,7 @@
 	function dismissCreated() {
 		createdID = '';
 		createdPassword = '';
+		createdConnectionString = '';
 	}
 
 	async function handleDelete(db: Database) {
@@ -233,7 +232,6 @@
 							<th class="py-2">Size (GB)</th>
 							<th class="py-2">Status</th>
 							<th class="py-2">Host</th>
-							<th class="py-2">Port</th>
 							<th class="py-2">Created</th>
 							<th class="py-2">Actions</th>
 						</tr>
@@ -244,8 +242,7 @@
 								<td class="py-2">{db.name}</td>
 								<td class="py-2">{db.size_gb}</td>
 								<td class="py-2" class:text-red-600={db.status === 'failed'}>{db.status}</td>
-								<td class="py-2">{db.host ?? '-'}</td>
-								<td class="py-2">{db.port ?? '-'}</td>
+								<td class="py-2 font-mono text-xs">{db.public_host ? `${db.public_host}:5432` : '-'}</td>
 								<td class="py-2">{new Date(db.created_at).toLocaleString()}</td>
 								<td class="py-2">
 									{#if db.status === 'running' || db.status === 'failed'}

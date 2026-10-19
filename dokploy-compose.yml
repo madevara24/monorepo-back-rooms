@@ -12,6 +12,8 @@ services:
       AGENT_CA_B64: ${AGENT_CA_B64}
       AGENT_CLIENT_CERT_B64: ${AGENT_CLIENT_CERT_B64}
       AGENT_CLIENT_KEY_B64: ${AGENT_CLIENT_KEY_B64}
+    volumes:
+      - /etc/mbr/routes:/etc/mbr/routes
     depends_on:
       mbr-control-db:
         condition: service_healthy

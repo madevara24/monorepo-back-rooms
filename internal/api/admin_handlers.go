@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
 )
 
@@ -187,7 +188,11 @@ func (a *API) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, createDatabaseResponse{ID: created.ID, Password: password})
+	writeJSON(w, http.StatusCreated, createDatabaseResponse{
+		ID:               created.ID,
+		Password:         password,
+		ConnectionString: routes.ConnectionString(*created.Slug, password),
+	})
 }
 
 // handleAdminDeleteDatabase force-deletes any owner's database: it moves

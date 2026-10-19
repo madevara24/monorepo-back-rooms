@@ -10,8 +10,7 @@ export type Database = {
 	name: string;
 	size_gb: number;
 	status: string;
-	host: string | null;
-	port: number | null;
+	public_host: string | null;
 	created_at: string;
 };
 
@@ -81,6 +80,7 @@ export type AdminJob = {
 export type CreateDatabaseResult = {
 	id: string;
 	password: string;
+	connection_string: string;
 };
 
 export function postJSON(path: string, body?: unknown): Promise<Response> {

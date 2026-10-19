@@ -8,28 +8,36 @@ import (
 	"strings"
 	"time"
 
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 	"github.com/madevara24/monorepo-back-rooms/internal/store"
 )
 
+// databaseResponse is the tenant-facing shape of a database row. It
+// reports the public hostname a client connects through, never the
+// internal node address; admin responses keep that separately (see
+// adminDatabaseResponse in admin_handlers.go).
 type databaseResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	SizeGB    int       `json:"size_gb"`
-	Status    string    `json:"status"`
-	Host      *string   `json:"host"`
-	Port      *int      `json:"port"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	SizeGB     int       `json:"size_gb"`
+	Status     string    `json:"status"`
+	PublicHost *string   `json:"public_host"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 func toDatabaseResponse(d store.Database) databaseResponse {
+	var publicHost *string
+	if d.Slug != nil {
+		h := routes.PublicHost(*d.Slug)
+		publicHost = &h
+	}
 	return databaseResponse{
-		ID:        d.ID,
-		Name:      d.Name,
-		SizeGB:    d.SizeGB,
-		Status:    d.Status,
-		Host:      d.Host,
-		Port:      d.Port,
-		CreatedAt: d.CreatedAt,
+		ID:         d.ID,
+		Name:       d.Name,
+		SizeGB:     d.SizeGB,
+		Status:     d.Status,
+		PublicHost: publicHost,
+		CreatedAt:  d.CreatedAt,
 	}
 }
 
@@ -69,9 +77,13 @@ type createDatabaseRequest struct {
 	SizeGB int    `json:"size_gb"`
 }
 
+// createDatabaseResponse is returned exactly once, by the create
+// endpoints, since it is the only time the plaintext password is
+// available to build the full connection string.
 type createDatabaseResponse struct {
-	ID       string `json:"id"`
-	Password string `json:"password"`
+	ID               string `json:"id"`
+	Password         string `json:"password"`
+	ConnectionString string `json:"connection_string"`
 }
 
 // maxSlugAttempts bounds how many times provisionDatabase retries a fresh
@@ -162,7 +174,11 @@ func (a *API) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, createDatabaseResponse{ID: created.ID, Password: password})
+	writeJSON(w, http.StatusCreated, createDatabaseResponse{
+		ID:               created.ID,
+		Password:         password,
+		ConnectionString: routes.ConnectionString(*created.Slug, password),
+	})
 }
 
 // handleDeleteDatabase moves a database to "deleting" and queues the
