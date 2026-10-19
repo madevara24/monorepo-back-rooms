@@ -242,7 +242,9 @@
 								<td class="py-2">{db.name}</td>
 								<td class="py-2">{db.size_gb}</td>
 								<td class="py-2" class:text-red-600={db.status === 'failed'}>{db.status}</td>
-								<td class="py-2 font-mono text-xs">{db.public_host ? `${db.public_host}:5432` : '-'}</td>
+								<td class="py-2 font-mono text-xs">
+									{db.status === 'running' && db.public_host ? `${db.public_host}:5432` : '-'}
+								</td>
 								<td class="py-2">{new Date(db.created_at).toLocaleString()}</td>
 								<td class="py-2">
 									{#if db.status === 'running' || db.status === 'failed'}
