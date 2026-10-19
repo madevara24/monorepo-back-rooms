@@ -15,6 +15,11 @@ type Config struct {
 	PortMax     int
 	// Version is the build's commit SHA, reported by GET /v1/node.
 	Version string
+	// TenantTLSCertPath and TenantTLSKeyPath are host paths to the
+	// wildcard cert and key that every tenant container mounts
+	// read-only so Postgres can require TLS.
+	TenantTLSCertPath string
+	TenantTLSKeyPath  string
 }
 
 // Node holds the dependencies the agent's HTTP handlers and background
@@ -188,6 +193,8 @@ func (n *Node) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		HostDataDir: hostDataDir,
 		MemoryBytes: memoryBytes,
 		NanoCPUs:    nanoCPUs,
+		TLSCertPath: n.TenantTLSCertPath,
+		TLSKeyPath:  n.TenantTLSKeyPath,
 	})
 	if err != nil {
 		_ = n.Volumes.Remove(req.ID)
