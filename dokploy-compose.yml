@@ -2,7 +2,7 @@ services:
   mbr-api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: control-panel-service/Dockerfile
     restart: unless-stopped
     environment:
       API_ADDR: ":8080"
@@ -30,7 +30,7 @@ services:
 
   mbr-web:
     build:
-      context: ./web
+      context: ./control-web
       dockerfile: Dockerfile
       args:
         PUBLIC_DOKPLOY_URL: ${PUBLIC_DOKPLOY_URL}

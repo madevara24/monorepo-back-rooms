@@ -7,8 +7,8 @@ on:
   workflow_call:
 
 jobs:
-  go:
-    name: Go
+  control-panel-service:
+    name: Go (control-panel-service)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -26,15 +26,37 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL_TEST: postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable
+    defaults:
+      run:
+        working-directory: control-panel-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: control-panel-service/go.mod
       - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.12.2
+          working-directory: control-panel-service
+      - run: go test ./...
+
+  node-agent-service:
+    name: Go (node-agent-service)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: node-agent-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: node-agent-service/go.mod
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          working-directory: node-agent-service
       - run: go test ./...
 
   web:
@@ -42,14 +64,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web
+        working-directory: control-web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: control-web/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build

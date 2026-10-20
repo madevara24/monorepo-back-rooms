@@ -4,12 +4,20 @@ MBR — a self-serve Postgres marketplace. See [AGENTS.md](AGENTS.md) for the ar
 
 ## Layout
 
-- `cmd/api` — control-plane Go API.
-- `cmd/node` — data-plane agent (`mbr-node`).
-- `internal/` — shared Go packages: `store` (goose migrations and queries),
-  `auth` (argon2id and sessions), `api` (HTTP handlers), `healthz`.
-- `web/` — SvelteKit frontend (static build). Routes: `/`, `/signup`,
-  `/login`, `/dashboard`, `/billing`.
+One top-level folder per deployable stack, each its own Go module, tied
+together by the root `go.work`:
+
+- `control-panel-service/` — control-plane Go API (`cmd/api`). Layer-first
+  interior: `entities` (models), `repository` (pgx queries and goose
+  migration runner), `usecase` (auth, jobs, routes), `handler` (HTTP),
+  `pkg` (password/session/credentials primitives), `migrations` (embedded
+  SQL), and `internal/container.go` (composition root).
+- `node-agent-service/` — data-plane agent (`cmd/node`, `mbr-node`). Same
+  layering: `entities`, `repository` (Docker/volume adapters), `usecase`
+  (provision/delete/reconcile/heartbeat), `handler` (HTTP, its own
+  `/healthz`), `internal/container.go`.
+- `control-web/` — SvelteKit frontend (static build). Routes: `/`,
+  `/signup`, `/login`, `/dashboard`, `/billing`.
 - `compose.yaml` — local control Postgres.
 
 ## Prerequisites
@@ -22,8 +30,8 @@ MBR — a self-serve Postgres marketplace. See [AGENTS.md](AGENTS.md) for the ar
 
 ```bash
 make dev     # starts control Postgres, the API, the node agent, and the web dev server
-make test    # go vet + go test + svelte-check
-make build   # go build ./cmd/api ./cmd/node + npm run build in web/
+make test    # go vet + go test (both modules) + svelte-check
+make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-web/
 ```
 
 Run each service on its own, if needed:
@@ -31,18 +39,18 @@ Run each service on its own, if needed:
 ```bash
 docker compose up -d control-db   # Postgres 17 on :5432
 
-go run ./cmd/api                  # :8080, GET /healthz
-go run ./cmd/node                 # :8081, GET /healthz
+go run ./control-panel-service/cmd/api    # :8080, GET /healthz
+go run ./node-agent-service/cmd/node      # :8081, GET /healthz
 
-cd web && npm install && npm run dev
+cd control-web && npm install && npm run dev
 ```
 
 The web dev server proxies `/healthz` and `/api` to the API at
-`http://localhost:8080` (see `web/vite.config.ts`), so `cmd/api` must be
-running for the home page and the signup/login/dashboard/billing pages to
-work. In production, deploy `web`'s static build behind the same host as
-the API so `/healthz` and `/api` resolve same-origin, same as the proxy
-does in dev.
+`http://localhost:8080` (see `control-web/vite.config.ts`), so `cmd/api`
+must be running for the home page and the signup/login/dashboard/billing
+pages to work. In production, deploy `control-web`'s static build behind
+the same host as the API so `/healthz` and `/api` resolve same-origin,
+same as the proxy does in dev.
 
 `cmd/api` applies its goose migrations on startup against `DATABASE_URL`
 (default `postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable`, matching
@@ -57,24 +65,27 @@ The control plane runs on the existing VPS under Dokploy, as the compose
 app `mbr` (`dokploy-compose.yml`), on the external `dokploy-network`, with
 Traefik routing `mbr.madevara.com`:
 
-- `mbr-api` — built from the repo root `Dockerfile`, port 8080, handles
-  `/api/*` and `/healthz` (priority 10).
-- `mbr-web` — built from `web/Dockerfile`, port 80, serves everything else
-  on the host (priority 1).
+- `mbr-api` — built from the repo root with
+  `dockerfile: control-panel-service/Dockerfile` (the build context stays
+  at the repo root because `go.work` ties `control-panel-service` to
+  `node-agent-service`), port 8080, handles `/api/*` and `/healthz`
+  (priority 10).
+- `mbr-web` — built from `control-web/Dockerfile`, port 80, serves
+  everything else on the host (priority 1).
 - `mbr-control-db` — `postgres:17` with a named volume, no published host
   port, only reachable from `mbr-api` on `dokploy-network`.
 
 The data plane, S3, and snapshots are out of scope for this cutover.
 
-`Dockerfile` derives the build's commit SHA by running `git rev-parse
-HEAD` inside the build stage, which assumes Dokploy's build context
-includes `.git` (true for a normal git clone, which is how Dokploy builds
-compose apps). If a deploy's `/healthz` ever reports `"commit":"unknown"`
-or the `Wait for the live commit to match` step in `deploy.yml` times out
-while logging a `last seen commit` that isn't the dispatched SHA, that
-assumption has broken; pass the correct SHA explicitly with
-`--build-arg COMMIT_SHA=<sha>` (wired into the Dockerfile as a fallback)
-until the build context is fixed.
+`control-panel-service/Dockerfile` derives the build's commit SHA by
+running `git rev-parse HEAD` inside the build stage, which assumes
+Dokploy's build context includes `.git` (true for a normal git clone,
+which is how Dokploy builds compose apps). If a deploy's `/healthz` ever
+reports `"commit":"unknown"` or the `Wait for the live commit to match`
+step in `deploy.yml` times out while logging a `last seen commit` that
+isn't the dispatched SHA, that assumption has broken; pass the correct
+SHA explicitly with `--build-arg COMMIT_SHA=<sha>` (wired into the
+Dockerfile as a fallback) until the build context is fixed.
 
 ### Production env vars
 
@@ -113,3 +124,28 @@ Merging to `main` deploys automatically. Deploys run one at a time
 (`concurrency: group: deploy`), so a merge queued behind an in-flight
 deploy waits instead of racing it. To deploy without a merge, open the
 Actions tab and run `Deploy` manually.
+
+## Production (data plane)
+
+The data plane runs `mbr-node` as a plain binary under systemd on its own
+VPS; there is no CI-built artifact or container image for it. Build and
+install it manually after every change:
+
+```bash
+git pull
+go build -o /usr/local/bin/mbr-node ./node-agent-service/cmd/node
+systemctl restart mbr-node
+```
+
+The `go build` source path moved from `./cmd/node` to
+`./node-agent-service/cmd/node` when the repo split into per-stack Go
+modules; the binary's name, env vars, and systemd unit are unchanged.
+The unit (e.g. `/etc/systemd/system/mbr-node.service`) runs the binary
+with the same env it has always needed:
+
+```
+AGENT_ADDR, AGENT_DATA_DIR, AGENT_NODE_ID, AGENT_HOST_ADDRESS, AGENT_IMAGE,
+AGENT_PORT_MIN, AGENT_PORT_MAX, AGENT_TLS_CERT, AGENT_TLS_KEY,
+AGENT_CLIENT_CA, AGENT_TENANT_TLS_CERT, AGENT_TENANT_TLS_KEY,
+CONTROL_URL, AGENT_CONTROL_TOKEN
+```
