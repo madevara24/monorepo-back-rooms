@@ -111,7 +111,10 @@ Repo secrets, for `.github/workflows/deploy.yml`:
 | `VPS_USER` / `VPS_HOST` | SSH target. |
 | `DOKPLOY_KEY` | Dokploy API key, used from the VPS to call its own API. |
 | `DOKPLOY_MBR_COMPOSE_ID` | The Dokploy compose app id for `mbr`. |
-| `DOKPLOY_MBR_ROUTER_COMPOSE_ID` | The Dokploy compose app id for the separate `mbr-router` app (see [Production (connection router)](#production-connection-router)). Only used by the `deploy-router` job. |
+
+The router's deploy job reuses `VPS_SSH_KEY`, `VPS_KNOWN_HOST`,
+`VPS_USER`, and `VPS_HOST` above; it has no Dokploy app or secret of its
+own (see [Production (connection router)](#production-connection-router)).
 
 ### Deploying
 
@@ -120,32 +123,41 @@ manually:
 
 1. A `gate` job runs the same checks as `ci.yml` (`go vet`, `go test`, the
    web build).
-2. A `deploy` job SSHes into the VPS and calls the Dokploy API
-   (`compose.deploy`) for `DOKPLOY_MBR_COMPOSE_ID`, then polls
-   `https://mbr.madevara.com/healthz` for up to 300s until its `commit`
-   field equals the deployed commit SHA. This job always runs; it never
-   touches the router.
-3. A `deploy-router` job exists but only runs when the workflow is
-   dispatched manually with its `deploy_router` input checked. It
-   deploys the separate `mbr-router` app (`DOKPLOY_MBR_ROUTER_COMPOSE_ID`)
-   and polls its loopback-only `/healthz` over SSH. See
+2. A `changes` job uses `dorny/paths-filter` to decide which stacks
+   actually changed: `control` for `control-panel-service/**`,
+   `control-web/**`, and `dokploy-compose.yml`; `router` for
+   `connection-router/**` and `dokploy-compose.router.yml`. A manual
+   `workflow_dispatch` forces both to `true`, so an operator can always
+   redeploy either stack without a qualifying push.
+3. A `deploy` job runs when `control` is true. It SSHes into the VPS and
+   calls the Dokploy API (`compose.deploy`) for `DOKPLOY_MBR_COMPOSE_ID`,
+   then polls `https://mbr.madevara.com/healthz` for up to 300s until its
+   `commit` field equals the deployed commit SHA.
+4. A `deploy-router` job runs when `router` is true. It builds
+   `mbr-router:$GITHUB_SHA` on the runner from `connection-router/Dockerfile`,
+   streams it to the VPS with `docker save | gzip` over SSH, `docker
+   load`s it there, replaces the running `mbr-router` container with
+   `docker run`, and polls its loopback-only `/healthz` over SSH until
+   `commit` matches. See
    [`connection-router/README.md`](connection-router/README.md#migration-runbook)
-   for why this is deliberately not part of the normal push-to-main path.
+   for the cutover and rollback runbook.
 
-Merging to `main` deploys `mbr-api`/`mbr-web` automatically; the router
-is never deployed by a merge. Deploys run one at a time
+A control-plane-only change deploys `mbr-api`/`mbr-web` without
+restarting the router, and a router-only change deploys `mbr-router`
+without restarting the API/web — each stack's path filter keeps the
+other's container untouched. Deploys run one at a time
 (`concurrency: group: deploy`), so a merge queued behind an in-flight
-deploy waits instead of racing it. To deploy without a merge, open the
-Actions tab and run `Deploy` manually.
+deploy waits instead of racing it. To force a deploy without a
+qualifying push, open the Actions tab and run `Deploy` manually.
 
 ## Production (connection router)
 
-`connection-router` deploys on the same VPS and Dokploy instance as
-`mbr-api`/`mbr-web`, but as its own, separate Dokploy compose app
-(`dokploy-compose.router.yml`), so a routine control-plane deploy never
-restarts the live `:5432` data path. Full details — the handshake it
-implements, its config, the Dokploy app setup, and the migration and
-rollback runbook for cutting it over from nginx — live in
+`connection-router` deploys on the same VPS as `mbr-api`/`mbr-web`, but
+as a plain `mbr-router` Docker container run directly over SSH, not a
+Dokploy app — so a routine control-plane deploy never restarts the
+live `:5432` data path. Full details — the handshake it implements, its
+config, and the migration and rollback runbook for cutting it over from
+nginx — live in
 [`connection-router/README.md`](connection-router/README.md).
 
 ## Production (data plane)

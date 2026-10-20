@@ -4,8 +4,8 @@ Merging to `main` deploys. `auto_merge: true` in the task pipeline is production
 
 | Stack | Deploy target | Auto on `main` | Path filter |
 |---|---|---|---|
-| `control-panel-service`, `control-web` | Dokploy app `mbr` | yes | currently every push; target `control-panel-service/**`, `control-web/**`, `dokploy-compose.yml` in MBR-19 |
-| `connection-router` | Dokploy app `mbr-router` | target yes after the cutover; currently manual | `connection-router/**`, `dokploy-compose.router.yml` |
+| `control-panel-service`, `control-web` | Dokploy app `mbr` | yes | `control-panel-service/**`, `control-web/**`, `dokploy-compose.yml` |
+| `connection-router` | SSH container deploy of `mbr-router` on KKB (no Dokploy app) | yes | `connection-router/**`, `dokploy-compose.router.yml` |
 | `node-agent-service` | Manual binary on each data VPS (systemd) | no; explicit manual exception | n/a; every change includes the rebuild/restart runbook |
 
 ## New stack checklist
@@ -19,5 +19,5 @@ Merging to `main` deploys. `auto_merge: true` in the task pipeline is production
 
 ## Current exceptions
 
-- `connection-router`: manual `workflow_dispatch` cutover while nginx owns host `:5432`; auto-deploy is `MBR-19`, blocked until the router is live and the API strings no longer carry `sslnegotiation=direct`.
+- `connection-router`: there is no `mbr-router` Dokploy app or secret. `deploy-router` in `.github/workflows/deploy.yml` builds `mbr-router:$GITHUB_SHA` on the runner, ships it to KKB with `docker save | gzip` over SSH, and runs it directly with `docker run` — see `connection-router/README.md`. This replaced the `MBR-19` manual `workflow_dispatch`-only gate now that the router is live and cut over to `:5432`.
 - `node-agent-service`: no CI-built artifact; the binary is installed and restarted on each data VPS by hand. This is a documented exception, not a precedent for new stacks.
