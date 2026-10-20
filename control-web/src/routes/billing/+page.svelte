@@ -2,6 +2,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { errorMessage, postJSON, type Invoice } from '$lib/api';
+	import { pushToast } from '$lib/toast.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import Panel from '$lib/components/Panel.svelte';
+	import Table from '$lib/components/Table.svelte';
+	import Status from '$lib/components/Status.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let invoices: Invoice[] = $state([]);
 	let loading: boolean = $state(true);
@@ -31,15 +38,15 @@
 	});
 
 	async function handlePay(invoice: Invoice) {
-		error = '';
 		payingID = invoice.id;
 		try {
 			const res = await postJSON(`/api/billing/invoices/${invoice.id}/pay`);
 			if (!res.ok) {
-				error = await errorMessage(res);
+				pushToast('error', await errorMessage(res));
 				return;
 			}
 			await loadInvoices();
+			pushToast('success', 'Invoice paid (mock).');
 		} finally {
 			payingID = '';
 		}
@@ -50,52 +57,49 @@
 	}
 </script>
 
-<main class="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-6">
-	<header class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Billing</h1>
-		<a class="underline" href="/dashboard">Dashboard</a>
-	</header>
+<TopBar links={[{ href: '/dashboard', label: 'Dashboard' }]} />
+
+<main class="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
+	<h1 class="text-2xl font-semibold text-text">Billing</h1>
 
 	{#if loading}
-		<p>Loading...</p>
+		<p class="text-muted">Loading...</p>
 	{:else}
 		{#if error}
-			<p class="text-sm text-red-600">{error}</p>
+			<p class="text-sm text-error">{error}</p>
 		{/if}
 
-		{#if invoices.length === 0}
-			<p>No invoices yet.</p>
-		{:else}
-			<table class="w-full border-collapse text-left">
-				<thead>
-					<tr class="border-b">
-						<th class="py-2">Period</th>
-						<th class="py-2">Amount</th>
-						<th class="py-2">Status</th>
-						<th class="py-2"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each invoices as invoice (invoice.id)}
-						<tr class="border-b">
-							<td class="py-2">{invoice.period_start} &ndash; {invoice.period_end}</td>
-							<td class="py-2">{formatIDR(invoice.total_amount_idr)}</td>
-							<td class="py-2">{invoice.status}</td>
-							<td class="py-2">
-								{#if invoice.status === 'open'}
-									<button
-										class="rounded bg-black px-3 py-1 text-white disabled:opacity-50"
-										disabled={payingID === invoice.id}
-										onclick={() => handlePay(invoice)}
-									>
-										Pay
-									</button>
-								{/if}
-							</td>
+		<Panel title="Invoices">
+			{#if invoices.length === 0}
+				<EmptyState message="No invoices yet." />
+			{:else}
+				<Table>
+					<thead>
+						<tr>
+							<th>Period</th>
+							<th>Amount</th>
+							<th>Status</th>
+							<th></th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/if}
+					</thead>
+					<tbody>
+						{#each invoices as invoice (invoice.id)}
+							<tr>
+								<td>{invoice.period_start} &ndash; {invoice.period_end}</td>
+								<td class="font-mono">{formatIDR(invoice.total_amount_idr)}</td>
+								<td><Status state={invoice.status} /></td>
+								<td>
+									{#if invoice.status === 'open'}
+										<Button size="sm" disabled={payingID === invoice.id} onclick={() => handlePay(invoice)}>
+											Pay
+										</Button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</Table>
+			{/if}
+		</Panel>
 	{/if}
 </main>
