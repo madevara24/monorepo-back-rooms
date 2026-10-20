@@ -10,9 +10,11 @@ Two planes, never on the same host.
 
 | Plane | What runs there |
 |---|---|
-| Control | `cmd/api` (Go), `web/` (SvelteKit static), control Postgres 17. Existing VPS, Dokploy, `mbr.madevara.com`. |
-| Data | `cmd/node` (`mbr-node`), Docker, one Postgres container per tenant. Separate VPS. |
+| Control | `control-panel-service` (`cmd/api`, Go), `control-web/` (SvelteKit static), control Postgres 17. Existing VPS, Dokploy, `mbr.madevara.com`. |
+| Data | `node-agent-service` (`cmd/node`, `mbr-node`), Docker, one Postgres container per tenant. Separate VPS. |
 | Storage | S3 bucket for snapshots, written by the agent. |
+
+Each deployable stack is its own top-level folder and Go module (`control-panel-service/go.mod`, `node-agent-service/go.mod`, tied together by the root `go.work`), with a layer-first interior: `entities` (models), `repository` (pgx/Docker), `usecase` (business logic), `handler` (net/http), and a `container.go` composition root.
 
 The control plane is the source of truth for users, databases, sizes, status, snapshots, and invoices. The data plane holds the bytes. `mbr-node` is the only process that talks to Docker; the API calls it over mTLS.
 
@@ -39,11 +41,9 @@ Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host po
 
 ```bash
 make dev     # control Postgres + api + node + web
-make test    # go vet + go test + svelte-check
-make build   # go build ./cmd/api ./cmd/node + npm run build in web/
+make test    # go vet + go test (both modules) + svelte-check
+make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-web/
 ```
-
-The scaffold task creates these targets. Until it lands, the repo is only this tooling.
 
 ## Pipeline contract
 
