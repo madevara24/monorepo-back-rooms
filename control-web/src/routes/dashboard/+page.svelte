@@ -229,10 +229,6 @@
 					{@render field('Password', createdPassword, 'password')}
 					{#if connectionString}
 						{@render field('Connection string', connectionString, 'connection_string')}
-						<p class="text-xs text-gray-600">
-							Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
-							support). Older client versions may fail to connect.
-						</p>
 
 						<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
 						{@render field('JDBC URL', jdbcURL, 'jdbc_url')}
@@ -248,8 +244,7 @@
 								rel="noopener noreferrer">ISRG Root X1 certificate</a
 							>
 							and replace the query string with
-							<code>sslmode=verify-full&amp;sslNegotiation=direct&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code
-							>. Requires pgJDBC 42.7.4 or newer.
+							<code>sslmode=verify-full&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code>.
 						</p>
 					{:else if createdDatabase?.status === 'failed'}
 						<p class="text-red-600">Provisioning failed. Delete this database and try again.</p>

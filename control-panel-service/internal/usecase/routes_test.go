@@ -27,7 +27,7 @@ func TestRenderEmpty(t *testing.T) {
 
 func TestConnectionString(t *testing.T) {
 	got := usecase.ConnectionString("demo-ab12", "s3cr3t")
-	want := "postgres://postgres:s3cr3t@demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system"
+	want := "postgres://postgres:s3cr3t@demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=verify-full&sslrootcert=system"
 	if got != want {
 		t.Fatalf("ConnectionString = %q, want %q", got, want)
 	}
@@ -35,7 +35,7 @@ func TestConnectionString(t *testing.T) {
 
 func TestJDBCConnectionString(t *testing.T) {
 	got := usecase.JDBCConnectionString("demo-ab12")
-	want := "jdbc:postgresql://demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=require&sslNegotiation=direct"
+	want := "jdbc:postgresql://demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=require"
 	if got != want {
 		t.Fatalf("JDBCConnectionString = %q, want %q", got, want)
 	}

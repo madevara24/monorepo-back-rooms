@@ -37,27 +37,21 @@ func PublicHost(slug string) string {
 // slug and password. The password is only ever available to the caller
 // once, at creation time.
 //
-// sslnegotiation=direct skips the plaintext Postgres SSLRequest, so
-// nginx's ssl_preread sees the TLS ClientHello's SNI on the first packet
-// instead of routing to the default backend. sslrootcert=system points
+// The connection router (connection-router/) replaced nginx's
+// ssl_preread on :5432: it reads the SNI out of a client's normal
+// SSLRequest-then-ClientHello handshake, so sslnegotiation=direct is
+// no longer required and is dropped here. sslrootcert=system points
 // libpq at the OS trust store instead of ~/.postgresql/root.crt, which
 // postgres:17 clients don't have.
-//
-// sslnegotiation=direct requires a PostgreSQL 17+ aware client: psql
-// 17+, libpq 17+ (so psycopg2/psycopg3 need a matching system libpq),
-// jackc/pgx v5.7.5+, node-postgres (pg) v8.22.0+, pgjdbc v42.7.4+, or
-// asyncpg v0.32.0+ (earlier asyncpg versions parse the DSN keyword but
-// omit the ALPN PostgreSQL 17 requires, so direct negotiation silently
-// fails). Older client versions fall back to indirect negotiation with
-// no client-side error, which the proxy then misroutes.
 func ConnectionString(slug, password string) string {
-	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system", password, PublicHost(slug), PublicPort)
+	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full&sslrootcert=system", password, PublicHost(slug), PublicPort)
 }
 
 // JDBCConnectionString returns the default DBeaver/pgJDBC connection URL
-// for slug. DBeaver rejects the postgres:// scheme ConnectionString uses,
-// and pgJDBC's own direct-negotiation keyword is the camelCase
-// sslNegotiation, not libpq's sslnegotiation.
+// for slug. DBeaver rejects the postgres:// scheme ConnectionString uses.
+//
+// As with ConnectionString, sslNegotiation=direct is dropped: the
+// connection router handles pgJDBC's normal SSLRequest handshake.
 //
 // This default only sets sslmode=require: the connection is encrypted but
 // the client does not verify the server's identity. The stronger
@@ -65,12 +59,8 @@ func ConnectionString(slug, password string) string {
 // (the ISRG Root X1 PEM; sslrootcert=system is a libpq-only keyword pgJDBC
 // does not understand), so it is documented in the UI rather than built
 // here.
-//
-// sslNegotiation=direct requires pgJDBC 42.7.4 or newer; older versions
-// silently fall back to indirect negotiation, which the SNI proxy then
-// misroutes with no client-side error.
 func JDBCConnectionString(slug string) string {
-	return fmt.Sprintf("jdbc:postgresql://%s:%d/postgres?sslmode=require&sslNegotiation=direct", PublicHost(slug), PublicPort)
+	return fmt.Sprintf("jdbc:postgresql://%s:%d/postgres?sslmode=require", PublicHost(slug), PublicPort)
 }
 
 // Render renders routes as the proxy's map file, one line per route
