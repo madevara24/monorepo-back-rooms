@@ -14,11 +14,14 @@
 	let createError: string = $state('');
 
 	let createdID: string = $state('');
+	let createdHost: string = $state('');
+	let createdPort: number | null = $state(null);
+	let createdDatabaseName: string = $state('');
+	let createdUser: string = $state('');
 	let createdPassword: string = $state('');
 	let createdConnectionString: string = $state('');
 	let createdJDBCURL: string = $state('');
-	let copied: boolean = $state(false);
-	let copiedJDBC: boolean = $state(false);
+	let copiedField: string = $state('');
 
 	let actionError: string = $state('');
 	let actionTarget: string = $state('');
@@ -94,11 +97,14 @@
 			}
 			const result: CreateDatabaseResult = await res.json();
 			createdID = result.id;
+			createdHost = result.host;
+			createdPort = result.port;
+			createdDatabaseName = result.database;
+			createdUser = result.user;
 			createdPassword = result.password;
 			createdConnectionString = result.connection_string;
 			createdJDBCURL = result.jdbc_url;
-			copied = false;
-			copiedJDBC = false;
+			copiedField = '';
 			createName = '';
 			createSizeGB = 1;
 			await loadDatabases();
@@ -107,23 +113,22 @@
 		}
 	}
 
-	async function handleCopy() {
-		if (!connectionString) return;
-		await navigator.clipboard.writeText(connectionString);
-		copied = true;
-	}
-
-	async function handleCopyJDBC() {
-		if (!jdbcURL) return;
-		await navigator.clipboard.writeText(jdbcURL);
-		copiedJDBC = true;
+	async function copyField(field: string, value: string) {
+		if (!value) return;
+		await navigator.clipboard.writeText(value);
+		copiedField = field;
 	}
 
 	function dismissCreated() {
 		createdID = '';
+		createdHost = '';
+		createdPort = null;
+		createdDatabaseName = '';
+		createdUser = '';
 		createdPassword = '';
 		createdConnectionString = '';
 		createdJDBCURL = '';
+		copiedField = '';
 	}
 
 	async function handleDelete(db: Database) {
@@ -199,39 +204,38 @@
 				<p class="text-sm text-red-600">{createError}</p>
 			{/if}
 
+			{#snippet field(label: string, value: string, key: string)}
+				<div class="flex items-center gap-2">
+					<span class="w-24 shrink-0 text-xs font-semibold">{label}</span>
+					<input
+						class="flex-1 rounded border px-2 py-1 font-mono text-xs"
+						readonly
+						{value}
+						onclick={(e) => e.currentTarget.select()}
+					/>
+					<button class="rounded border px-2 py-1 text-xs" onclick={() => copyField(key, value)}>
+						{copiedField === key ? 'Copied' : 'Copy'}
+					</button>
+				</div>
+			{/snippet}
+
 			{#if createdID}
 				<div class="flex flex-col gap-2 rounded border border-amber-400 bg-amber-50 p-3 text-sm">
 					<p>Database created. This password is shown once and will not be shown again.</p>
-					<p>Password: <span class="font-mono">{createdPassword}</span></p>
+					{@render field('Host', createdHost, 'host')}
+					{@render field('Port', String(createdPort ?? ''), 'port')}
+					{@render field('Database', createdDatabaseName, 'database')}
+					{@render field('User', createdUser, 'user')}
+					{@render field('Password', createdPassword, 'password')}
 					{#if connectionString}
-						<div class="flex items-center gap-2">
-							<input
-								class="flex-1 rounded border px-2 py-1 font-mono text-xs"
-								readonly
-								value={connectionString}
-								onclick={(e) => e.currentTarget.select()}
-							/>
-							<button class="rounded border px-2 py-1 text-xs" onclick={handleCopy}>
-								{copied ? 'Copied' : 'Copy'}
-							</button>
-						</div>
+						{@render field('Connection string', connectionString, 'connection_string')}
 						<p class="text-xs text-gray-600">
 							Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
 							support). Older client versions may fail to connect.
 						</p>
 
 						<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
-						<div class="flex items-center gap-2">
-							<input
-								class="flex-1 rounded border px-2 py-1 font-mono text-xs"
-								readonly
-								value={jdbcURL}
-								onclick={(e) => e.currentTarget.select()}
-							/>
-							<button class="rounded border px-2 py-1 text-xs" onclick={handleCopyJDBC}>
-								{copiedJDBC ? 'Copied' : 'Copy'}
-							</button>
-						</div>
+						{@render field('JDBC URL', jdbcURL, 'jdbc_url')}
 						<p class="text-xs text-gray-600">
 							Enter the username (<code>postgres</code>) and password separately in DBeaver. This
 							URL's <code>sslmode=require</code> encrypts the connection but does not verify the

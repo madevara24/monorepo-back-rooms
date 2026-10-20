@@ -30,6 +30,7 @@
 	let creating: boolean = $state(false);
 	let createError: string = $state('');
 	let created: CreateDatabaseResult | null = $state(null);
+	let copiedField: string = $state('');
 
 	let actionError: string = $state('');
 	let actionTarget: string = $state('');
@@ -80,6 +81,12 @@
 		}
 	});
 
+	async function copyField(field: string, value: string) {
+		if (!value) return;
+		await navigator.clipboard.writeText(value);
+		copiedField = field;
+	}
+
 	function formatCounts(counts: Record<string, number>): string {
 		const entries = Object.entries(counts);
 		if (entries.length === 0) return 'none';
@@ -90,6 +97,7 @@
 		event.preventDefault();
 		createError = '';
 		created = null;
+		copiedField = '';
 		creating = true;
 		try {
 			const res = await postJSON('/api/admin/databases', {
@@ -274,18 +282,37 @@
 				<p class="text-sm text-red-600">{createError}</p>
 			{/if}
 
+			{#snippet field(label: string, value: string, key: string)}
+				<div class="flex items-center gap-2">
+					<span class="w-24 shrink-0 text-xs font-semibold">{label}</span>
+					<input
+						class="flex-1 rounded border px-2 py-1 font-mono text-xs"
+						readonly
+						{value}
+						onclick={(e) => e.currentTarget.select()}
+					/>
+					<button class="rounded border px-2 py-1 text-xs" onclick={() => copyField(key, value)}>
+						{copiedField === key ? 'Copied' : 'Copy'}
+					</button>
+				</div>
+			{/snippet}
+
 			{#if created}
-				<div class="flex flex-col gap-1 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
+				<div class="flex flex-col gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
 					<p>Database created. This password is shown once and will not be shown again.</p>
-					<p>Password: <span class="font-mono">{created.password}</span></p>
-					<p class="break-all font-mono text-xs">{created.connection_string}</p>
+					{@render field('Host', created.host, 'host')}
+					{@render field('Port', String(created.port), 'port')}
+					{@render field('Database', created.database, 'database')}
+					{@render field('User', created.user, 'user')}
+					{@render field('Password', created.password, 'password')}
+					{@render field('Connection string', created.connection_string, 'connection_string')}
 					<p class="text-xs text-gray-600">
 						Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
 						support). Older client versions may fail to connect.
 					</p>
 
 					<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
-					<p class="break-all font-mono text-xs">{created.jdbc_url}</p>
+					{@render field('JDBC URL', created.jdbc_url, 'jdbc_url')}
 					<p class="text-xs text-gray-600">
 						Enter the username (<code>postgres</code>) and password separately in DBeaver. This
 						URL's <code>sslmode=require</code> encrypts the connection but does not verify the
