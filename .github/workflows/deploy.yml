@@ -4,16 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      deploy_router:
-        description: >-
-          Also deploy the connection router (the :5432 data path). This
-          is a separate Dokploy app from mbr-api/mbr-web specifically
-          so it is never touched by a push-to-main deploy; leave this
-          unchecked unless you are deliberately cutting the data path
-          over (see the runbook in connection-router/README.md).
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy
@@ -24,9 +14,38 @@ jobs:
     name: Gate
     uses: ./.github/workflows/ci.yml
 
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      control: ${{ steps.force.outputs.control || steps.filter.outputs.control }}
+      router: ${{ steps.force.outputs.router || steps.filter.outputs.router }}
+    steps:
+      - name: Force both stacks on manual dispatch
+        id: force
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "control=true" >> "$GITHUB_OUTPUT"
+          echo "router=true" >> "$GITHUB_OUTPUT"
+
+      - name: Paths filter
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            control:
+              - 'control-panel-service/**'
+              - 'control-web/**'
+              - 'dokploy-compose.yml'
+            router:
+              - 'connection-router/**'
+              - 'dokploy-compose.router.yml'
+
   deploy:
     name: Deploy
-    needs: gate
+    needs: [gate, changes]
+    if: needs.changes.outputs.control == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -69,19 +88,22 @@ jobs:
           echo "timed out after 300s waiting for /healthz to report $GITHUB_SHA (last seen commit: '$last_seen')" >&2
           exit 1
 
-  # deploy-router is deliberately workflow_dispatch-only, gated behind
-  # its own input: the router is the live :5432 data path once cut
-  # over (see the runbook in connection-router/README.md), and a
-  # routine push-to-main deploy of mbr-api/mbr-web must never restart
-  # it. mbr-router's GET /healthz is published to host loopback only
-  # (not through Traefik), so it's polled over SSH, not a public URL.
+  # mbr-router has no Dokploy app: it's a single container run directly
+  # over SSH, built on the runner and shipped as a docker save|gzip
+  # stream, so a routine control-plane deploy (the `deploy` job above)
+  # never touches it. mbr-router's GET /healthz is published to host
+  # loopback only (not through Traefik), so it's polled over SSH, not a
+  # public URL. See connection-router/README.md for the migration and
+  # rollback runbook.
   deploy-router:
     name: Deploy router
-    needs: gate
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_router
+    needs: [gate, changes]
+    if: needs.changes.outputs.router == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v4
+
       - name: Configure SSH
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -92,18 +114,32 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$VPS_KNOWN_HOST" > ~/.ssh/known_hosts
 
-      - name: Trigger Dokploy deploy (router)
+      - name: Build the router image
+        run: |
+          docker build -f connection-router/Dockerfile \
+            --build-arg COMMIT_SHA="$GITHUB_SHA" \
+            -t "mbr-router:$GITHUB_SHA" .
+
+      - name: Ship the image to the VPS
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          DOKPLOY_KEY: ${{ secrets.DOKPLOY_KEY }}
-          DOKPLOY_MBR_ROUTER_COMPOSE_ID: ${{ secrets.DOKPLOY_MBR_ROUTER_COMPOSE_ID }}
+        run: |
+          docker save "mbr-router:$GITHUB_SHA" | gzip | \
+            ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" 'docker load'
+
+      - name: Run the new container
+        env:
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" bash -s <<SCRIPT
-          curl -fsS -X POST http://localhost:3000/api/compose.deploy \
-            -H "x-api-key: $DOKPLOY_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"composeId\":\"$DOKPLOY_MBR_ROUTER_COMPOSE_ID\"}"
+          docker rm -f mbr-router || true
+          docker run -d --name mbr-router --restart unless-stopped \
+            -p 5432:15432 \
+            -p 127.0.0.1:9099:9099 \
+            -v /etc/mbr/routes:/etc/mbr/routes:ro \
+            mbr-router:$GITHUB_SHA
           SCRIPT
 
       - name: Wait for the router's /healthz to report the deployed commit

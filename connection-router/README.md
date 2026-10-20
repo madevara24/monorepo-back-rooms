@@ -97,31 +97,45 @@ fake backend.
 
 ## Production
 
-`connection-router` deploys on the same VPS and the same Dokploy
-instance as `control-panel-service`/`control-web`, but as its **own**
-Dokploy compose app (`dokploy-compose.router.yml`, built from
-`connection-router/Dockerfile`), specifically so a routine control-plane
-deploy never restarts the live `:5432` data path. It bind-mounts
+`connection-router` deploys on the same VPS as
+`control-panel-service`/`control-web`, but it is **not** a Dokploy app:
+it's a plain `mbr-router` Docker container, run and restarted directly
+over SSH, specifically so a routine control-plane deploy never restarts
+the live `:5432` data path. It bind-mounts
 `/etc/mbr/routes:/etc/mbr/routes:ro` — read-only; it is never the
-writer — and runs as `65532:65532` (distroless's `nonroot`), matching
-the map directory's existing owner. No new host user, and no change
-to who writes the map.
+writer — and runs as `65532:65532` (distroless's `nonroot`, baked into
+`connection-router/Dockerfile`), matching the map directory's existing
+owner. No new host user, and no change to who writes the map.
 
-Deploying it is `.github/workflows/deploy.yml`'s `deploy-router` job:
-`workflow_dispatch` only, gated behind its own `deploy_router` input,
-using the `DOKPLOY_MBR_ROUTER_COMPOSE_ID` secret (set once the
-separate Dokploy app is created). It is never triggered by a plain
-push to `main` — see the migration runbook below for why.
+Deploying it is `.github/workflows/deploy.yml`'s `deploy-router` job,
+gated by a `changes` job (`dorny/paths-filter` over
+`connection-router/**` and `dokploy-compose.router.yml`) so it only runs
+on a router-touching push to `main`, or any manual `workflow_dispatch`
+(which forces it regardless of path). The job:
+
+1. Builds `mbr-router:$GITHUB_SHA` on the GitHub runner from
+   `connection-router/Dockerfile`.
+2. Streams it to the VPS with `docker save mbr-router:$GITHUB_SHA |
+   gzip | ssh ... docker load` — there's no registry in between.
+3. Replaces the running container: `docker rm -f mbr-router`, then
+   `docker run -d --name mbr-router --restart unless-stopped -p
+   5432:15432 -p 127.0.0.1:9099:9099 -v
+   /etc/mbr/routes:/etc/mbr/routes:ro mbr-router:$GITHUB_SHA`.
+4. Polls `http://127.0.0.1:9099/healthz` over SSH until `commit`
+   matches `$GITHUB_SHA`.
+
+`dokploy-compose.router.yml` still documents the same container's
+image build and run shape (ports, mount, restart policy) for anyone
+reproducing the deploy by hand; the workflow does not call Dokploy for
+this stack. See the migration runbook below for how this container was
+first cut over from nginx.
 
 ### Secrets
 
-In addition to the secrets `control-panel-service`'s deploy already
-uses (`VPS_SSH_KEY`, `VPS_KNOWN_HOST`, `VPS_USER`, `VPS_HOST`,
-`DOKPLOY_KEY`), the router's deploy needs:
-
-| Secret | Purpose |
-|---|---|
-| `DOKPLOY_MBR_ROUTER_COMPOSE_ID` | The Dokploy compose app id for the separate `mbr-router` app, created once in the Dokploy UI from `dokploy-compose.router.yml`. |
+The router's deploy reuses the secrets `control-panel-service`'s
+deploy already uses: `VPS_SSH_KEY`, `VPS_KNOWN_HOST`, `VPS_USER`,
+`VPS_HOST`. It needs no Dokploy app, API key, or compose-id secret of
+its own.
 
 ## Migration runbook
 
@@ -129,10 +143,11 @@ This router replaces nginx's `stream { ssl_preread ... }` on `:5432`
 without a flag day: it runs side by side with nginx on a different
 port first, gets verified, and only then takes over `:5432`.
 
-1. **Stand up on `:5433` first.** Deploy `dokploy-compose.router.yml`
-   with its port mapping temporarily changed to `"5433:15432"`
-   (instead of `"5432:15432"`), using the live route map. Leave nginx
-   and the real `:5432` untouched.
+1. **Stand up on `:5433` first.** Build and run the `mbr-router`
+   container (per `dokploy-compose.router.yml`'s build/run shape) with
+   its port mapping temporarily changed to `"5433:15432"` (instead of
+   `"5432:15432"`), using the live route map. Leave nginx and the real
+   `:5432` untouched.
 2. **Verify against `:5433`:**
    - Standard `psql` with no `sslnegotiation` parameter — this is the
      case nginx's `ssl_preread` could never handle, and the reason
@@ -154,10 +169,11 @@ port first, gets verified, and only then takes over `:5432`.
      the above runs.
 3. **Cut `:5432` over.** Stop nginx's `stream` systemd unit (leave its
    config and unit **installed** — don't remove them, that's the
-   rollback path), then point `dokploy-compose.router.yml`'s port
-   mapping at `"5432:15432"` and (re)deploy the router app so Docker's
-   port publishing binds host `:5432`. Keep nginx disabled, not
-   uninstalled, for at least a week.
+   rollback path), then point the container's port mapping at
+   `"5432:15432"` and re-run it (`docker rm -f mbr-router` + `docker
+   run ...`, as `.github/workflows/deploy.yml`'s `deploy-router` job
+   does) so Docker's port publishing binds host `:5432`. Keep nginx
+   disabled, not uninstalled, for at least a week.
 4. **Deploy the client string change** (dropping
    `sslnegotiation=direct` / `sslNegotiation=direct` from
    `ConnectionString` / `JDBCConnectionString` — this is a normal
@@ -173,9 +189,10 @@ port first, gets verified, and only then takes over `:5432`.
 ### Rollback
 
 nginx's `stream` config and systemd unit stay installed specifically
-for this: if the router needs to come back out, stop the router's
-Dokploy app (or just its container) and re-enable + start nginx's
-`stream` unit. Because nginx's `ssl_preread` setup never understood
+for this: if the router needs to come back out, stop the `mbr-router`
+container (`docker stop mbr-router` or `docker rm -f mbr-router`) and
+re-enable + start nginx's `stream` unit. Because nginx's `ssl_preread`
+setup never understood
 indirect negotiation, rolling back also means clients need
 `sslnegotiation=direct` again — if the client string change (step 4
 above) has already shipped, that specific rollback combination breaks

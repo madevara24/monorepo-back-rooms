@@ -10,11 +10,11 @@ Merging to `main` deploys. `auto_merge: true` in the task pipeline is production
 
 A new deployable stack is not done until:
 
-1. it has its own Dokploy app/compose, or an explicit documented manual exception;
+1. it has its own Dokploy app/compose, or an explicit documented deploy mechanism (e.g. the router's SSH container deploy — see below);
 2. `.github/workflows/deploy.yml` has a push-to-main job with a path filter for that stack;
 3. unrelated stack changes cannot restart it.
 
-If a new stack lacks a deploy path, the task is blocked and `auto_merge` stays false. A one-time cutover exception must be temporary and linked to a follow-up task; the router's manual gate is `MBR-19`, not the permanent state. Every merge is live only after the stack's health check reports the merged commit.
+If a new stack lacks a deploy path, the task is blocked and `auto_merge` stays false. A one-time cutover exception must be temporary and linked to a follow-up task. `connection-router` went through that cutover in `MBR-19`: it deploys as its own path-filtered job in `deploy.yml`, but as a plain `mbr-router` Docker container run and restarted over SSH, not a Dokploy app — there is no `mbr-router` Dokploy app or secret. Every merge is live only after the stack's health check reports the merged commit.
 
 The stack-to-deploy map and current exceptions are in `DEPLOY.md`.
 
