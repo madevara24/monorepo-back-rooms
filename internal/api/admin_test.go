@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"net/http"
 	"testing"
+
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 )
 
 func doRequest(t *testing.T, client *http.Client, method, url string) *http.Response {
@@ -322,8 +324,10 @@ func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
 		t.Fatalf("POST /api/admin/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
 	}
 	var created struct {
-		ID       string `json:"id"`
-		Password string `json:"password"`
+		ID               string `json:"id"`
+		Password         string `json:"password"`
+		ConnectionString string `json:"connection_string"`
+		JDBCURL          string `json:"jdbc_url"`
 	}
 	decode(t, resp, &created)
 	if created.ID == "" {
@@ -333,8 +337,8 @@ func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
 		t.Fatalf("create response password length = %d, want 32", len(created.Password))
 	}
 
-	var userID, status string
-	if err := db.QueryRow(`SELECT user_id, status FROM databases WHERE id = $1`, created.ID).Scan(&userID, &status); err != nil {
+	var userID, status, slug string
+	if err := db.QueryRow(`SELECT user_id, status, slug FROM databases WHERE id = $1`, created.ID).Scan(&userID, &status, &slug); err != nil {
 		t.Fatalf("look up created database: %v", err)
 	}
 	if userID != ownerID {
@@ -342,6 +346,12 @@ func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
 	}
 	if status != "provisioning" {
 		t.Fatalf("created database status = %q, want provisioning", status)
+	}
+	if want := routes.ConnectionString(slug, created.Password); created.ConnectionString != want {
+		t.Fatalf("create response connection_string = %q, want %q", created.ConnectionString, want)
+	}
+	if want := routes.JDBCConnectionString(slug); created.JDBCURL != want {
+		t.Fatalf("create response jdbc_url = %q, want %q", created.JDBCURL, want)
 	}
 
 	var jobCount int

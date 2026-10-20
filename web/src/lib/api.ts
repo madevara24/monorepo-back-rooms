@@ -81,6 +81,7 @@ export type CreateDatabaseResult = {
 	id: string;
 	password: string;
 	connection_string: string;
+	jdbc_url: string;
 };
 
 export function postJSON(path: string, body?: unknown): Promise<Response> {

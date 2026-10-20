@@ -87,6 +87,14 @@ func TestConnectionString(t *testing.T) {
 	}
 }
 
+func TestJDBCConnectionString(t *testing.T) {
+	got := routes.JDBCConnectionString("demo-ab12")
+	want := "jdbc:postgresql://demo-ab12.db.mbr.madevara.com:5432/postgres?sslmode=require&sslNegotiation=direct"
+	if got != want {
+		t.Fatalf("JDBCConnectionString = %q, want %q", got, want)
+	}
+}
+
 func TestPublicHost(t *testing.T) {
 	if got := routes.PublicHost("demo-ab12"); got != "demo-ab12.db.mbr.madevara.com" {
 		t.Fatalf("PublicHost = %q", got)

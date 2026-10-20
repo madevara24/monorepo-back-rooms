@@ -56,6 +56,25 @@ func ConnectionString(slug, password string) string {
 	return fmt.Sprintf("postgres://postgres:%s@%s:%d/postgres?sslmode=verify-full&sslnegotiation=direct&sslrootcert=system", password, PublicHost(slug), PublicPort)
 }
 
+// JDBCConnectionString returns the default DBeaver/pgJDBC connection URL
+// for slug. DBeaver rejects the postgres:// scheme ConnectionString uses,
+// and pgJDBC's own direct-negotiation keyword is the camelCase
+// sslNegotiation, not libpq's sslnegotiation.
+//
+// This default only sets sslmode=require: the connection is encrypted but
+// the client does not verify the server's identity. The stronger
+// sslmode=verify-full form needs a root certificate path pgJDBC can read
+// (the ISRG Root X1 PEM; sslrootcert=system is a libpq-only keyword pgJDBC
+// does not understand), so it is documented in the UI rather than built
+// here.
+//
+// sslNegotiation=direct requires pgJDBC 42.7.4 or newer; older versions
+// silently fall back to indirect negotiation, which the SNI proxy then
+// misroutes with no client-side error.
+func JDBCConnectionString(slug string) string {
+	return fmt.Sprintf("jdbc:postgresql://%s:%d/postgres?sslmode=require&sslNegotiation=direct", PublicHost(slug), PublicPort)
+}
+
 // Render renders routes as the proxy's map file, one line per route
 // sorted by hostname so the output is deterministic and WriteAtomic can
 // detect a no-op reconcile.

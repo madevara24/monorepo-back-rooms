@@ -16,7 +16,9 @@
 	let createdID: string = $state('');
 	let createdPassword: string = $state('');
 	let createdConnectionString: string = $state('');
+	let createdJDBCURL: string = $state('');
 	let copied: boolean = $state(false);
+	let copiedJDBC: boolean = $state(false);
 
 	let actionError: string = $state('');
 	let actionTarget: string = $state('');
@@ -26,6 +28,7 @@
 	const monthlyPriceIDR = $derived(createSizeGB * 10000);
 	const createdDatabase = $derived(databases.find((d) => d.id === createdID) ?? null);
 	const connectionString = $derived(createdDatabase?.status === 'running' ? createdConnectionString : '');
+	const jdbcURL = $derived(createdDatabase?.status === 'running' ? createdJDBCURL : '');
 
 	function pollDatabase(id: string) {
 		if (pollTimers.has(id)) return;
@@ -93,7 +96,9 @@
 			createdID = result.id;
 			createdPassword = result.password;
 			createdConnectionString = result.connection_string;
+			createdJDBCURL = result.jdbc_url;
 			copied = false;
+			copiedJDBC = false;
 			createName = '';
 			createSizeGB = 1;
 			await loadDatabases();
@@ -108,10 +113,17 @@
 		copied = true;
 	}
 
+	async function handleCopyJDBC() {
+		if (!jdbcURL) return;
+		await navigator.clipboard.writeText(jdbcURL);
+		copiedJDBC = true;
+	}
+
 	function dismissCreated() {
 		createdID = '';
 		createdPassword = '';
 		createdConnectionString = '';
+		createdJDBCURL = '';
 	}
 
 	async function handleDelete(db: Database) {
@@ -206,6 +218,34 @@
 						<p class="text-xs text-gray-600">
 							Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
 							support). Older client versions may fail to connect.
+						</p>
+
+						<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
+						<div class="flex items-center gap-2">
+							<input
+								class="flex-1 rounded border px-2 py-1 font-mono text-xs"
+								readonly
+								value={jdbcURL}
+								onclick={(e) => e.currentTarget.select()}
+							/>
+							<button class="rounded border px-2 py-1 text-xs" onclick={handleCopyJDBC}>
+								{copiedJDBC ? 'Copied' : 'Copy'}
+							</button>
+						</div>
+						<p class="text-xs text-gray-600">
+							Enter the username (<code>postgres</code>) and password separately in DBeaver. This
+							URL's <code>sslmode=require</code> encrypts the connection but does not verify the
+							server's identity. For <code>sslmode=verify-full</code>, which also verifies the
+							server, download the
+							<a
+								class="underline"
+								href="https://letsencrypt.org/certs/isrgrootx1.pem"
+								target="_blank"
+								rel="noopener noreferrer">ISRG Root X1 certificate</a
+							>
+							and replace the query string with
+							<code>sslmode=verify-full&amp;sslNegotiation=direct&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code
+							>. Requires pgJDBC 42.7.4 or newer.
 						</p>
 					{:else if createdDatabase?.status === 'failed'}
 						<p class="text-red-600">Provisioning failed. Delete this database and try again.</p>

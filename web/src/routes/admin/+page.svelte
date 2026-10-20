@@ -283,6 +283,24 @@
 						Needs a PostgreSQL 17+ client (psql 17+, or a recent driver version with direct SSL
 						support). Older client versions may fail to connect.
 					</p>
+
+					<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
+					<p class="break-all font-mono text-xs">{created.jdbc_url}</p>
+					<p class="text-xs text-gray-600">
+						Enter the username (<code>postgres</code>) and password separately in DBeaver. This
+						URL's <code>sslmode=require</code> encrypts the connection but does not verify the
+						server's identity. For <code>sslmode=verify-full</code>, which also verifies the
+						server, download the
+						<a
+							class="underline"
+							href="https://letsencrypt.org/certs/isrgrootx1.pem"
+							target="_blank"
+							rel="noopener noreferrer">ISRG Root X1 certificate</a
+						>
+						and replace the query string with
+						<code>sslmode=verify-full&amp;sslNegotiation=direct&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code
+						>. Requires pgJDBC 42.7.4 or newer.
+					</p>
 				</div>
 			{/if}
 

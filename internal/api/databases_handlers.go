@@ -84,6 +84,7 @@ type createDatabaseResponse struct {
 	ID               string `json:"id"`
 	Password         string `json:"password"`
 	ConnectionString string `json:"connection_string"`
+	JDBCURL          string `json:"jdbc_url"`
 }
 
 // maxSlugAttempts bounds how many times provisionDatabase retries a fresh
@@ -178,6 +179,7 @@ func (a *API) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		ID:               created.ID,
 		Password:         password,
 		ConnectionString: routes.ConnectionString(*created.Slug, password),
+		JDBCURL:          routes.JDBCConnectionString(*created.Slug),
 	})
 }
 

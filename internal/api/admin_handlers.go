@@ -192,6 +192,7 @@ func (a *API) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Request) 
 		ID:               created.ID,
 		Password:         password,
 		ConnectionString: routes.ConnectionString(*created.Slug, password),
+		JDBCURL:          routes.JDBCConnectionString(*created.Slug),
 	})
 }
 
