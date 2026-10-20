@@ -79,6 +79,10 @@ export type AdminJob = {
 
 export type CreateDatabaseResult = {
 	id: string;
+	host: string;
+	port: number;
+	database: string;
+	user: string;
 	password: string;
 	connection_string: string;
 	jdbc_url: string;

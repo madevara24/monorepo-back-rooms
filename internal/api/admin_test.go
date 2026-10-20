@@ -325,6 +325,10 @@ func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
 	}
 	var created struct {
 		ID               string `json:"id"`
+		Host             string `json:"host"`
+		Port             int    `json:"port"`
+		Database         string `json:"database"`
+		User             string `json:"user"`
 		Password         string `json:"password"`
 		ConnectionString string `json:"connection_string"`
 		JDBCURL          string `json:"jdbc_url"`
@@ -346,6 +350,18 @@ func TestAdminCreateDatabaseProvisionsForGivenUser(t *testing.T) {
 	}
 	if status != "provisioning" {
 		t.Fatalf("created database status = %q, want provisioning", status)
+	}
+	if want := routes.PublicHost(slug); created.Host != want {
+		t.Fatalf("create response host = %q, want %q", created.Host, want)
+	}
+	if created.Port != routes.PublicPort {
+		t.Fatalf("create response port = %d, want %d", created.Port, routes.PublicPort)
+	}
+	if created.Database != "postgres" {
+		t.Fatalf("create response database = %q, want postgres", created.Database)
+	}
+	if created.User != "postgres" {
+		t.Fatalf("create response user = %q, want postgres", created.User)
 	}
 	if want := routes.ConnectionString(slug, created.Password); created.ConnectionString != want {
 		t.Fatalf("create response connection_string = %q, want %q", created.ConnectionString, want)

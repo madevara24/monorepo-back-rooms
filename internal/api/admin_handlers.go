@@ -190,6 +190,10 @@ func (a *API) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusCreated, createDatabaseResponse{
 		ID:               created.ID,
+		Host:             routes.PublicHost(*created.Slug),
+		Port:             routes.PublicPort,
+		Database:         "postgres",
+		User:             "postgres",
 		Password:         password,
 		ConnectionString: routes.ConnectionString(*created.Slug, password),
 		JDBCURL:          routes.JDBCConnectionString(*created.Slug),
