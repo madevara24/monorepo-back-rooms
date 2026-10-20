@@ -35,9 +35,9 @@ jobs:
         with:
           go-version-file: control-panel-service/go.mod
       - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.12.2
           working-directory: control-panel-service
       - run: go test ./...
 
@@ -53,9 +53,9 @@ jobs:
         with:
           go-version-file: node-agent-service/go.mod
       - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.12.2
           working-directory: node-agent-service
       - run: go test ./...
 

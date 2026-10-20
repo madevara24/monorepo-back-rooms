@@ -13,7 +13,7 @@ WORKDIR /src
 # --build-arg COMMIT_SHA=<sha> if git rev-parse ever reports "unknown".
 ARG COMMIT_SHA=""
 
-COPY go.work ./
+COPY go.work go.work.sum ./
 COPY control-panel-service/go.mod control-panel-service/go.sum control-panel-service/
 COPY node-agent-service/go.mod node-agent-service/go.sum node-agent-service/
 RUN go -C control-panel-service mod download
