@@ -57,6 +57,10 @@ Work arrives as a PM-vault task note; the note body is the prompt, and a git-ign
 
 Leave `auto_merge` alone; the pipeline sets it, and the merge gate waits for CI. Rebase the task branch onto `main` when resuming after a block; the runner does not reconcile it for you.
 
+## Deploy
+
+`main` is the deploy branch. The deploy workflow is the production path; after MBR-15 it triggers on push to `main`. A merge is not live until `/healthz` reports the merge commit. `auto_merge: true` in the task pipeline is production deploy authorization, not just merge permission. If the deploy trigger is missing, fixing it is part of the task, not an ops afterthought.
+
 ## Conventions
 
 - Each change gets a test; run the checks before committing.
