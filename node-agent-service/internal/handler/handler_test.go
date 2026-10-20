@@ -89,6 +89,13 @@ func (f *fakeDocker) RemoveTenantContainer(_ context.Context, containerID string
 	return nil
 }
 
+// CollectConnectionMetrics is unused by this package's handler-level
+// tests, which never run the heartbeat loop; it exists only so fakeDocker
+// satisfies repository.DockerClient.
+func (f *fakeDocker) CollectConnectionMetrics(context.Context, string) (entities.ConnectionMetrics, error) {
+	return entities.ConnectionMetrics{}, fmt.Errorf("not implemented")
+}
+
 // fakeVolumes is an in-memory stand-in for the loop-mounted ext4 volumes,
 // so handlers can be tested without root privileges.
 type fakeVolumes struct {

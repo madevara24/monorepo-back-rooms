@@ -7,7 +7,9 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
+	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/repository"
@@ -23,6 +25,31 @@ type Node struct {
 	// createMu serializes database creation so two concurrent requests
 	// for different ids cannot race for the same free port.
 	createMu sync.Mutex
+
+	// lastMetricsAt is when connection metrics were last collected. It is
+	// only read and written from RunLoop's single goroutine, so it needs
+	// no lock.
+	lastMetricsAt time.Time
+}
+
+// collectMetrics gathers a connection-pressure snapshot for every running
+// container, skipping (and logging, not failing) any container that is
+// not running or whose collection errors, so one wedged or deleted tenant
+// cannot break metrics collection for the rest or the heartbeat itself.
+func (n *Node) collectMetrics(ctx context.Context, containers []entities.Container) map[string]entities.ConnectionMetrics {
+	out := make(map[string]entities.ConnectionMetrics, len(containers))
+	for _, c := range containers {
+		if c.Status != "running" {
+			continue
+		}
+		m, err := n.Docker.CollectConnectionMetrics(ctx, c.ContainerID)
+		if err != nil {
+			log.Printf("node: metrics: collect %s: %v", c.DatabaseID, err)
+			continue
+		}
+		out[c.DatabaseID] = m
+	}
+	return out
 }
 
 // ListDatabases returns every tenant container the agent currently sees.

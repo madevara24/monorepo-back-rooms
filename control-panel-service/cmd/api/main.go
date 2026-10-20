@@ -23,6 +23,11 @@ var commit = "unknown"
 // already runs right after a provision or delete job completes.
 const routeReconcileInterval = 10 * time.Second
 
+// metricsRetentionInterval is how often old connection-pressure snapshots
+// are pruned. It does not need to run often: the retention window is 14
+// days.
+const metricsRetentionInterval = 1 * time.Hour
+
 func main() {
 	cfg := config.Load()
 
@@ -36,6 +41,7 @@ func main() {
 	defer stop()
 	go c.Worker.Run(ctx)
 	go c.Reconciler.Run(ctx, routeReconcileInterval)
+	go c.MetricsRetention.Run(ctx, metricsRetentionInterval)
 
 	server := &http.Server{Addr: cfg.Addr, Handler: c.Mux}
 	go func() {

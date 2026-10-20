@@ -4,6 +4,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -11,12 +12,15 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
 	dockercontainer "github.com/docker/docker/api/types/container"
 	dockerfilters "github.com/docker/docker/api/types/filters"
 	dockerimage "github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
@@ -81,6 +85,11 @@ type DockerClient interface {
 	CreateTenantContainer(ctx context.Context, spec entities.ContainerSpec) (entities.Container, error)
 	// RemoveTenantContainer stops and force-removes a container.
 	RemoveTenantContainer(ctx context.Context, containerID string) error
+	// CollectConnectionMetrics runs one bounded, read-only query inside a
+	// running tenant container over its local socket and trust auth, and
+	// inspects the container's configured memory limit. It returns an
+	// error if the container is not reachable or the query fails.
+	CollectConnectionMetrics(ctx context.Context, containerID string) (entities.ConnectionMetrics, error)
 }
 
 // sdkClient adapts the Docker SDK's *client.Client to DockerClient.
@@ -222,4 +231,106 @@ func (c *sdkClient) RemoveTenantContainer(ctx context.Context, containerID strin
 		return fmt.Errorf("remove container: %w", err)
 	}
 	return nil
+}
+
+// connectionStatsTimeout bounds the whole collection (inspect + exec) for
+// one container, so one slow or hung tenant cannot stall the agent's
+// heartbeat tick.
+const connectionStatsTimeout = 5 * time.Second
+
+// connectionStatsStatementTimeoutMS is set via PGOPTIONS at connection
+// startup, so the query below cannot itself run long on a wedged backend.
+const connectionStatsStatementTimeoutMS = "2000"
+
+// connectionStatsQuery counts backends by state and reads the two
+// connection-limit GUCs in a single round trip: the one bounded query per
+// tenant the task calls for. It runs as the postgres OS user over the
+// container's local socket, which tenantHBAConf's "local all all trust"
+// rule accepts without a password. It excludes its own backend
+// (pg_backend_pid()), which would otherwise always count itself as one
+// "active" connection and bias every snapshot upward by one.
+const connectionStatsQuery = `SELECT
+	count(*) FILTER (WHERE state = 'active'),
+	count(*) FILTER (WHERE state = 'idle'),
+	count(*) FILTER (WHERE state = 'idle in transaction'),
+	(SELECT setting FROM pg_settings WHERE name = 'max_connections'),
+	(SELECT setting FROM pg_settings WHERE name = 'superuser_reserved_connections')
+FROM pg_stat_activity
+WHERE pid <> pg_backend_pid();`
+
+func (c *sdkClient) CollectConnectionMetrics(ctx context.Context, containerID string) (entities.ConnectionMetrics, error) {
+	ctx, cancel := context.WithTimeout(ctx, connectionStatsTimeout)
+	defer cancel()
+
+	inspect, err := c.cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return entities.ConnectionMetrics{}, fmt.Errorf("inspect container: %w", err)
+	}
+	var memoryLimitBytes int64
+	if inspect.HostConfig != nil {
+		memoryLimitBytes = inspect.HostConfig.Memory
+	}
+
+	created, err := c.cli.ContainerExecCreate(ctx, containerID, dockercontainer.ExecOptions{
+		Cmd:          []string{"psql", "-U", "postgres", "-d", "postgres", "-At", "-F", ",", "-c", connectionStatsQuery},
+		Env:          []string{"PGOPTIONS=-c statement_timeout=" + connectionStatsStatementTimeoutMS},
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return entities.ConnectionMetrics{}, fmt.Errorf("create exec: %w", err)
+	}
+
+	attach, err := c.cli.ContainerExecAttach(ctx, created.ID, dockercontainer.ExecAttachOptions{})
+	if err != nil {
+		return entities.ConnectionMetrics{}, fmt.Errorf("attach exec: %w", err)
+	}
+	defer attach.Close()
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, attach.Reader); err != nil {
+		return entities.ConnectionMetrics{}, fmt.Errorf("read exec output: %w", err)
+	}
+
+	inspectExec, err := c.cli.ContainerExecInspect(ctx, created.ID)
+	if err != nil {
+		return entities.ConnectionMetrics{}, fmt.Errorf("inspect exec: %w", err)
+	}
+	if inspectExec.ExitCode != 0 {
+		return entities.ConnectionMetrics{}, fmt.Errorf("psql exited %d: %s", inspectExec.ExitCode, strings.TrimSpace(stderr.String()))
+	}
+
+	metrics, err := parseConnectionStats(stdout.String())
+	if err != nil {
+		return entities.ConnectionMetrics{}, err
+	}
+	metrics.MemoryLimitBytes = memoryLimitBytes
+	return metrics, nil
+}
+
+// parseConnectionStats parses the one-line, comma-separated output of
+// connectionStatsQuery.
+func parseConnectionStats(out string) (entities.ConnectionMetrics, error) {
+	line := strings.TrimSpace(out)
+	fields := strings.Split(line, ",")
+	if len(fields) != 5 {
+		return entities.ConnectionMetrics{}, fmt.Errorf("unexpected connection stats output %q", line)
+	}
+
+	values := make([]int, len(fields))
+	for i, f := range fields {
+		n, err := strconv.Atoi(strings.TrimSpace(f))
+		if err != nil {
+			return entities.ConnectionMetrics{}, fmt.Errorf("parse connection stats output %q: %w", line, err)
+		}
+		values[i] = n
+	}
+
+	return entities.ConnectionMetrics{
+		Active:                       values[0],
+		Idle:                         values[1],
+		IdleInTransaction:            values[2],
+		MaxConnections:               values[3],
+		SuperuserReservedConnections: values[4],
+	}, nil
 }

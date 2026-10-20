@@ -60,6 +60,7 @@ func NewMux(h *Handler) *http.ServeMux {
 	mux.HandleFunc("POST /api/admin/databases/{id}/retry", h.requireAdmin(h.handleAdminRetryDatabase))
 	mux.HandleFunc("GET /api/admin/nodes", h.requireAdmin(h.handleAdminNodes))
 	mux.HandleFunc("GET /api/admin/jobs", h.requireAdmin(h.handleAdminJobs))
+	mux.HandleFunc("GET /api/admin/database-metrics", h.requireAdmin(h.handleAdminDatabaseMetrics))
 
 	return mux
 }

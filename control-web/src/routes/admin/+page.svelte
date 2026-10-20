@@ -6,6 +6,7 @@
 		errorMessage,
 		postJSON,
 		type AdminDatabase,
+		type AdminDatabaseMetric,
 		type AdminJob,
 		type AdminNode,
 		type AdminOverview,
@@ -23,6 +24,8 @@
 	let databases: AdminDatabase[] = $state([]);
 	let nodes: AdminNode[] = $state([]);
 	let jobs: AdminJob[] = $state([]);
+	let databaseMetrics: AdminDatabaseMetric[] = $state([]);
+	let metricsError: string = $state('');
 
 	let createUserId: string = $state('');
 	let createName: string = $state('');
@@ -64,12 +67,13 @@
 				return;
 			}
 
-			[overview, users, databases, nodes, jobs] = await Promise.all([
+			[overview, users, databases, nodes, jobs, databaseMetrics] = await Promise.all([
 				loadJSON<AdminOverview>('/api/admin/overview'),
 				loadJSON<AdminUser[]>('/api/admin/users'),
 				loadJSON<AdminDatabase[]>('/api/admin/databases'),
 				loadJSON<AdminNode[]>('/api/admin/nodes'),
-				loadJSON<AdminJob[]>('/api/admin/jobs')
+				loadJSON<AdminJob[]>('/api/admin/jobs'),
+				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics')
 			]);
 			if (users.length > 0) {
 				createUserId = users[0].id;
@@ -85,6 +89,21 @@
 		if (!value) return;
 		await navigator.clipboard.writeText(value);
 		copiedField = field;
+	}
+
+	async function reloadMetrics() {
+		metricsError = '';
+		try {
+			databaseMetrics = await loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics');
+		} catch (e) {
+			metricsError = e instanceof Error ? e.message : 'could not load database metrics';
+		}
+	}
+
+	function warningBadgeClass(level: string): string {
+		if (level === 'critical') return 'rounded px-2 py-1 text-xs font-semibold bg-red-100 text-red-700';
+		if (level === 'warning') return 'rounded px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700';
+		return 'rounded px-2 py-1 text-xs font-semibold bg-green-100 text-green-700';
 	}
 
 	function formatCounts(counts: Record<string, number>): string {
@@ -377,6 +396,52 @@
 											</button>
 										{/if}
 									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</section>
+
+		<section class="flex flex-col gap-2">
+			<div class="flex items-center justify-between">
+				<h2 class="text-xl font-semibold">Connection pressure</h2>
+				<button class="rounded border px-2 py-1 text-xs" onclick={reloadMetrics}>Refresh</button>
+			</div>
+			{#if metricsError}
+				<p class="text-sm text-red-600">{metricsError}</p>
+			{/if}
+			{#if databaseMetrics.length === 0}
+				<p>No metrics yet.</p>
+			{:else}
+				<table class="w-full border-collapse text-left">
+					<thead>
+						<tr class="border-b">
+							<th class="py-2">Database</th>
+							<th class="py-2">Owner</th>
+							<th class="py-2">Used / Max</th>
+							<th class="py-2">%</th>
+							<th class="py-2">Active</th>
+							<th class="py-2">Idle</th>
+							<th class="py-2">Idle in txn</th>
+							<th class="py-2">Last collected</th>
+							<th class="py-2">Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each databaseMetrics as m (m.database_id)}
+							<tr class="border-b">
+								<td class="py-2">{m.database_name}</td>
+								<td class="py-2">{m.owner_email}</td>
+								<td class="py-2">{m.used} / {m.max_connections}</td>
+								<td class="py-2">{m.used_percent.toFixed(0)}%</td>
+								<td class="py-2">{m.active}</td>
+								<td class="py-2">{m.idle}</td>
+								<td class="py-2">{m.idle_in_transaction}</td>
+								<td class="py-2">{new Date(m.collected_at).toLocaleString()}</td>
+								<td class="py-2">
+									<span class={warningBadgeClass(m.warning_level)}>{m.warning_level}</span>
 								</td>
 							</tr>
 						{/each}

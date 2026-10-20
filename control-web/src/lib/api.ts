@@ -68,6 +68,22 @@ export type AdminNode = {
 	containers: AdminContainer[];
 };
 
+export type AdminDatabaseMetric = {
+	database_id: string;
+	database_name: string;
+	owner_email: string;
+	active: number;
+	idle: number;
+	idle_in_transaction: number;
+	used: number;
+	max_connections: number;
+	superuser_reserved_connections: number;
+	used_percent: number;
+	warning_level: 'ok' | 'warning' | 'critical';
+	memory_limit_bytes: number;
+	collected_at: string;
+};
+
 export type AdminJob = {
 	id: string;
 	kind: string;

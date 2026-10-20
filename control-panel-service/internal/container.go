@@ -28,14 +28,19 @@ const jobPollInterval = 2 * time.Second
 // reclaimed from a crashed or killed worker.
 const jobLeaseTimeout = 10 * time.Minute
 
+// metricsRetentionDays is how long connection-pressure history is kept
+// before it is pruned.
+const metricsRetentionDays = 14
+
 // Container holds every long-lived dependency cmd/api runs: the database
-// handle, the HTTP router, and the background job worker and route
-// reconciler.
+// handle, the HTTP router, and the background job worker, route
+// reconciler, and metrics retention pruner.
 type Container struct {
-	DB         *sql.DB
-	Mux        *http.ServeMux
-	Worker     *usecase.Worker
-	Reconciler *usecase.Reconciler
+	DB               *sql.DB
+	Mux              *http.ServeMux
+	Worker           *usecase.Worker
+	Reconciler       *usecase.Reconciler
+	MetricsRetention *usecase.MetricsRetention
 }
 
 // New connects to the database, applies migrations, and wires every
@@ -63,6 +68,7 @@ func New(cfg config.Config, commit string) (*Container, error) {
 	}
 
 	reconciler := &usecase.Reconciler{DB: db, Path: cfg.RoutesPath}
+	metricsRetention := &usecase.MetricsRetention{DB: db, RetentionDays: metricsRetentionDays}
 
 	worker := &usecase.Worker{
 		DB: db, Agent: agent, Cipher: cipher,
@@ -79,10 +85,11 @@ func New(cfg config.Config, commit string) (*Container, error) {
 	}
 
 	return &Container{
-		DB:         db,
-		Mux:        handler.NewMux(h),
-		Worker:     worker,
-		Reconciler: reconciler,
+		DB:               db,
+		Mux:              handler.NewMux(h),
+		Worker:           worker,
+		Reconciler:       reconciler,
+		MetricsRetention: metricsRetention,
 	}, nil
 }
 

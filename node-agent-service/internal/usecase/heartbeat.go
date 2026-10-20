@@ -7,16 +7,33 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
 )
 
-// heartbeatContainer and heartbeatCapacity mirror the shapes
-// control-panel-service/internal/handler's heartbeatContainer and
-// heartbeatCapacity expect in the POST /api/agent/heartbeat body.
+// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
+// mirror the shapes control-panel-service/internal/handler's
+// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
+// expect in the POST /api/agent/heartbeat body.
 type heartbeatContainer struct {
-	ID     string `json:"id"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Status string `json:"status"`
+	ID      string                      `json:"id"`
+	Host    string                      `json:"host"`
+	Port    int                         `json:"port"`
+	Status  string                      `json:"status"`
+	Metrics *heartbeatConnectionMetrics `json:"metrics,omitempty"`
+}
+
+// heartbeatConnectionMetrics is one container's connection-pressure
+// snapshot, attached to a heartbeatContainer only on ticks where metrics
+// were actually collected (every metricsInterval, not every heartbeat).
+type heartbeatConnectionMetrics struct {
+	Active                       int       `json:"active"`
+	Idle                         int       `json:"idle"`
+	IdleInTransaction            int       `json:"idle_in_transaction"`
+	MaxConnections               int       `json:"max_connections"`
+	SuperuserReservedConnections int       `json:"superuser_reserved_connections"`
+	MemoryLimitBytes             int64     `json:"memory_limit_bytes"`
+	CollectedAt                  time.Time `json:"collected_at"`
 }
 
 type heartbeatCapacity struct {
@@ -37,9 +54,12 @@ type heartbeatRequest struct {
 // heartbeat to the control plane, once immediately and then on every
 // tick of interval, until ctx is canceled. Both reconcile and heartbeat
 // run on this single cadence because they are the same Docker call: the
-// task describes each as "every 30s".
-func (n *Node) RunLoop(ctx context.Context, controlURL, controlToken string, interval time.Duration) {
-	n.tick(ctx, controlURL, controlToken)
+// task describes each as "every 30s". Connection-pressure metrics are
+// collected on their own, coarser metricsInterval cadence (the task wants
+// 60s), decoupled from the heartbeat send cadence so changing one does
+// not silently change the other.
+func (n *Node) RunLoop(ctx context.Context, controlURL, controlToken string, interval, metricsInterval time.Duration) {
+	n.tick(ctx, controlURL, controlToken, metricsInterval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -48,12 +68,12 @@ func (n *Node) RunLoop(ctx context.Context, controlURL, controlToken string, int
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n.tick(ctx, controlURL, controlToken)
+			n.tick(ctx, controlURL, controlToken, metricsInterval)
 		}
 	}
 }
 
-func (n *Node) tick(ctx context.Context, controlURL, controlToken string) {
+func (n *Node) tick(ctx context.Context, controlURL, controlToken string, metricsInterval time.Duration) {
 	containers, err := n.Docker.ListTenantContainers(ctx)
 	if err != nil {
 		log.Printf("node: reconcile: list tenant containers: %v", err)
@@ -73,9 +93,28 @@ func (n *Node) tick(ctx context.Context, controlURL, controlToken string) {
 	}
 	ports := portsInRange(usedPorts, n.PortMin, n.PortMax)
 
+	var metrics map[string]entities.ConnectionMetrics
+	collectMetrics := time.Since(n.lastMetricsAt) >= metricsInterval
+	if collectMetrics {
+		metrics = n.collectMetrics(ctx, containers)
+		n.lastMetricsAt = time.Now()
+	}
+
 	out := make([]heartbeatContainer, len(containers))
 	for i, c := range containers {
-		out[i] = heartbeatContainer{ID: c.DatabaseID, Host: n.HostAddress, Port: c.Port, Status: c.Status}
+		hc := heartbeatContainer{ID: c.DatabaseID, Host: n.HostAddress, Port: c.Port, Status: c.Status}
+		if m, ok := metrics[c.DatabaseID]; ok {
+			hc.Metrics = &heartbeatConnectionMetrics{
+				Active:                       m.Active,
+				Idle:                         m.Idle,
+				IdleInTransaction:            m.IdleInTransaction,
+				MaxConnections:               m.MaxConnections,
+				SuperuserReservedConnections: m.SuperuserReservedConnections,
+				MemoryLimitBytes:             m.MemoryLimitBytes,
+				CollectedAt:                  n.lastMetricsAt,
+			}
+		}
+		out[i] = hc
 	}
 
 	body := heartbeatRequest{
