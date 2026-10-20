@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { errorMessage, postJSON } from '$lib/api';
+	import Field from '$lib/components/Field.svelte';
+	import Input from '$lib/components/Input.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let email: string = $state('');
 	let password: string = $state('');
@@ -24,39 +28,33 @@
 	}
 </script>
 
-<main class="flex min-h-screen flex-col items-center justify-center gap-4">
-	<h1 class="text-2xl font-bold">Log in</h1>
+<div class="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
+	<div class="absolute top-4 right-4">
+		<ThemeToggle />
+	</div>
+
+	<h1 class="text-2xl font-semibold text-text">Log in</h1>
 
 	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
-		<label class="flex flex-col gap-1">
-			Email
-			<input
-				class="rounded border px-3 py-2"
-				type="email"
-				bind:value={email}
-				required
-				autocomplete="email"
-			/>
-		</label>
-		<label class="flex flex-col gap-1">
-			Password
-			<input
-				class="rounded border px-3 py-2"
+		<Field label="Email" id="login-email">
+			<Input id="login-email" type="email" bind:value={email} required autocomplete="email" />
+		</Field>
+		<Field label="Password" id="login-password">
+			<Input
+				id="login-password"
 				type="password"
 				bind:value={password}
 				required
 				autocomplete="current-password"
 			/>
-		</label>
+		</Field>
 
 		{#if error}
-			<p class="text-sm text-red-600">{error}</p>
+			<p class="text-sm text-error">{error}</p>
 		{/if}
 
-		<button class="rounded bg-black px-4 py-2 text-white disabled:opacity-50" disabled={submitting}>
-			Log in
-		</button>
+		<Button type="submit" disabled={submitting}>Log in</Button>
 	</form>
 
-	<p>Need an account? <a class="underline" href="/signup">Sign up</a></p>
-</main>
+	<p class="text-sm text-muted">Need an account? <a class="text-accent underline" href="/signup">Sign up</a></p>
+</div>
