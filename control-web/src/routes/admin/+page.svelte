@@ -12,11 +12,24 @@
 		type AdminUser,
 		type CreateDatabaseResult
 	} from '$lib/api';
+	import { pushToast } from '$lib/toast.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import StatusRail from '$lib/components/StatusRail.svelte';
+	import Panel from '$lib/components/Panel.svelte';
+	import Field from '$lib/components/Field.svelte';
+	import Input from '$lib/components/Input.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import Table from '$lib/components/Table.svelte';
+	import Status from '$lib/components/Status.svelte';
+	import CopyField from '$lib/components/CopyField.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	const dokployURL = publicEnv.PUBLIC_DOKPLOY_URL ?? '';
 
 	let loading: boolean = $state(true);
 	let error: string = $state('');
+	let endpoint: string = $state('/api');
 
 	let overview: AdminOverview | null = $state(null);
 	let users: AdminUser[] = $state([]);
@@ -30,10 +43,12 @@
 	let creating: boolean = $state(false);
 	let createError: string = $state('');
 	let created: CreateDatabaseResult | null = $state(null);
-	let copiedField: string = $state('');
 
-	let actionError: string = $state('');
 	let actionTarget: string = $state('');
+	let confirmAction: { kind: 'delete' | 'retry'; db: AdminDatabase } | null = $state(null);
+
+	const databaseCount = $derived(databases.length);
+	const provisionedGB = $derived(databases.reduce((sum, d) => sum + d.size_gb, 0));
 
 	async function loadJSON<T>(path: string): Promise<T> {
 		const res = await fetch(path);
@@ -52,6 +67,7 @@
 	}
 
 	onMount(async () => {
+		endpoint = `${location.host}/api`;
 		try {
 			const meRes = await fetch('/api/me');
 			if (!meRes.ok) {
@@ -81,12 +97,6 @@
 		}
 	});
 
-	async function copyField(field: string, value: string) {
-		if (!value) return;
-		await navigator.clipboard.writeText(value);
-		copiedField = field;
-	}
-
 	function formatCounts(counts: Record<string, number>): string {
 		const entries = Object.entries(counts);
 		if (entries.length === 0) return 'none';
@@ -97,7 +107,6 @@
 		event.preventDefault();
 		createError = '';
 		created = null;
-		copiedField = '';
 		creating = true;
 		try {
 			const res = await postJSON('/api/admin/databases', {
@@ -117,118 +126,104 @@
 		}
 	}
 
-	async function handleDelete(db: AdminDatabase) {
-		if (!confirm(`Delete database "${db.name}" (owned by ${db.owner_email})? This cannot be undone.`)) {
-			return;
-		}
-		actionError = '';
-		actionTarget = db.id;
-		try {
-			const res = await fetch(`/api/admin/databases/${db.id}`, { method: 'DELETE' });
-			if (!res.ok) {
-				actionError = await errorMessage(res);
-				return;
-			}
-			await reloadDatabasesAndOverview();
-		} finally {
-			actionTarget = '';
-		}
+	function requestDelete(db: AdminDatabase) {
+		confirmAction = { kind: 'delete', db };
 	}
 
-	async function handleRetry(db: AdminDatabase) {
-		if (!confirm(`Retry database "${db.name}" (owned by ${db.owner_email})?`)) {
-			return;
-		}
-		actionError = '';
+	function requestRetry(db: AdminDatabase) {
+		confirmAction = { kind: 'retry', db };
+	}
+
+	async function confirmPending() {
+		const action = confirmAction;
+		if (!action) return;
+		confirmAction = null;
+		const { kind, db } = action;
 		actionTarget = db.id;
 		try {
-			const res = await postJSON(`/api/admin/databases/${db.id}/retry`);
+			const res =
+				kind === 'delete'
+					? await fetch(`/api/admin/databases/${db.id}`, { method: 'DELETE' })
+					: await postJSON(`/api/admin/databases/${db.id}/retry`);
 			if (!res.ok) {
-				actionError = await errorMessage(res);
+				pushToast('error', await errorMessage(res));
 				return;
 			}
 			await reloadDatabasesAndOverview();
+			pushToast('success', kind === 'delete' ? `Deleted "${db.name}".` : `Retrying "${db.name}".`);
 		} finally {
 			actionTarget = '';
 		}
 	}
 </script>
 
-<main class="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 p-6">
-	<header class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Admin</h1>
-		<nav class="flex items-center gap-4">
-			{#if dokployURL}
-				<a class="underline" href={dokployURL} target="_blank" rel="noopener noreferrer">
-					Dokploy
-				</a>
-			{/if}
-			<a class="underline" href="/dashboard">Dashboard</a>
-		</nav>
-	</header>
+<TopBar
+	links={[
+		...(dokployURL ? [{ href: dokployURL, label: 'Dokploy' }] : []),
+		{ href: '/dashboard', label: 'Dashboard' }
+	]}
+/>
+<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
 
+<main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
 	{#if loading}
-		<p>Loading...</p>
+		<p class="text-muted">Loading...</p>
 	{:else if error}
-		<p class="text-sm text-red-600">{error}</p>
+		<p class="text-sm text-error">{error}</p>
 	{:else}
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Overview</h2>
+		<Panel title="Overview">
 			{#if overview}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<tbody>
-						<tr class="border-b">
-							<th class="py-2 pr-4 font-medium">Users</th>
-							<td class="py-2">{overview.users}</td>
+						<tr>
+							<th>Users</th>
+							<td>{overview.users}</td>
 						</tr>
-						<tr class="border-b">
-							<th class="py-2 pr-4 font-medium">Databases by status</th>
-							<td class="py-2">{formatCounts(overview.databases_by_status)}</td>
+						<tr>
+							<th>Databases by status</th>
+							<td>{formatCounts(overview.databases_by_status)}</td>
 						</tr>
-						<tr class="border-b">
-							<th class="py-2 pr-4 font-medium">Nodes</th>
-							<td class="py-2">{overview.nodes_fresh} fresh, {overview.nodes_stale} stale</td>
+						<tr>
+							<th>Nodes</th>
+							<td>{overview.nodes_fresh} fresh, {overview.nodes_stale} stale</td>
 						</tr>
-						<tr class="border-b">
-							<th class="py-2 pr-4 font-medium">Jobs by status</th>
-							<td class="py-2">{formatCounts(overview.jobs_by_status)}</td>
+						<tr>
+							<th>Jobs by status</th>
+							<td>{formatCounts(overview.jobs_by_status)}</td>
 						</tr>
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Nodes</h2>
+		<Panel title="Nodes">
 			{#if nodes.length === 0}
-				<p>No nodes yet.</p>
+				<EmptyState message="No nodes yet." />
 			{:else}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<thead>
-						<tr class="border-b">
-							<th class="py-2">ID</th>
-							<th class="py-2">Version</th>
-							<th class="py-2">Last heartbeat</th>
-							<th class="py-2">Capacity</th>
-							<th class="py-2">Containers</th>
+						<tr>
+							<th>ID</th>
+							<th>Version</th>
+							<th>Last heartbeat</th>
+							<th>Capacity</th>
+							<th>Containers</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each nodes as node (node.id)}
-							<tr class="border-b align-top">
-								<td class="py-2">{node.id}</td>
-								<td class="py-2">{node.version || '-'}</td>
-								<td class="py-2">
-									{node.last_heartbeat ? new Date(node.last_heartbeat).toLocaleString() : 'never'}
-								</td>
-								<td class="py-2 font-mono text-xs">{JSON.stringify(node.capacity)}</td>
-								<td class="py-2">
+							<tr>
+								<td class="font-mono text-xs">{node.id}</td>
+								<td class="font-mono text-xs">{node.version || '-'}</td>
+								<td>{node.last_heartbeat ? new Date(node.last_heartbeat).toLocaleString() : 'never'}</td>
+								<td class="font-mono text-xs">{JSON.stringify(node.capacity)}</td>
+								<td>
 									{#if node.containers.length === 0}
-										<span class="text-sm text-gray-500">none</span>
+										<span class="text-muted">none</span>
 									{:else}
 										<ul class="flex flex-col gap-1">
 											{#each node.containers as container (container.database_id)}
-												<li class="text-sm">
+												<li class="font-mono text-xs">
 													{container.database_id.slice(0, 8)} &middot; {container.status} &middot; port
 													{container.port}
 												</li>
@@ -239,77 +234,49 @@
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Databases</h2>
-
-			<form class="flex flex-wrap items-end gap-3 rounded border p-3" onsubmit={handleCreate}>
-				<label class="flex flex-col gap-1 text-sm">
-					User
-					<select class="rounded border px-3 py-2" bind:value={createUserId} required>
+		<Panel title="Databases">
+			<form class="flex flex-wrap items-end gap-3" onsubmit={handleCreate}>
+				<Field label="User" id="admin-create-user">
+					<select
+						id="admin-create-user"
+						class="h-11 w-full min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-text"
+						bind:value={createUserId}
+						required
+					>
 						{#each users as u (u.id)}
 							<option value={u.id}>{u.email}</option>
 						{/each}
 					</select>
-				</label>
-				<label class="flex flex-col gap-1 text-sm">
-					Name
-					<input class="rounded border px-3 py-2" type="text" bind:value={createName} required />
-				</label>
-				<label class="flex flex-col gap-1 text-sm">
-					Size (GB)
-					<input
-						class="w-24 rounded border px-3 py-2"
-						type="number"
-						min="1"
-						max="20"
-						bind:value={createSizeGB}
-						required
-					/>
-				</label>
-				<button
-					class="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-					disabled={creating || users.length === 0}
-				>
-					Create
-				</button>
+				</Field>
+				<Field label="Name" id="admin-create-name">
+					<Input id="admin-create-name" type="text" bind:value={createName} required />
+				</Field>
+				<Field label="Size (GB)" id="admin-create-size">
+					<Input id="admin-create-size" type="number" min={1} max={20} bind:value={createSizeGB} required />
+				</Field>
+				<Button type="submit" disabled={creating || users.length === 0}>Create</Button>
 			</form>
 
 			{#if createError}
-				<p class="text-sm text-red-600">{createError}</p>
+				<p class="text-sm text-error">{createError}</p>
 			{/if}
 
-			{#snippet field(label: string, value: string, key: string)}
-				<div class="flex items-center gap-2">
-					<span class="w-24 shrink-0 text-xs font-semibold">{label}</span>
-					<input
-						class="flex-1 rounded border px-2 py-1 font-mono text-xs"
-						readonly
-						{value}
-						onclick={(e) => e.currentTarget.select()}
-					/>
-					<button class="rounded border px-2 py-1 text-xs" onclick={() => copyField(key, value)}>
-						{copiedField === key ? 'Copied' : 'Copy'}
-					</button>
-				</div>
-			{/snippet}
-
 			{#if created}
-				<div class="flex flex-col gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm">
+				<div class="flex flex-col gap-2 rounded-md border border-warning bg-bg p-3 text-sm">
 					<p>Database created. This password is shown once and will not be shown again.</p>
-					{@render field('Host', created.host, 'host')}
-					{@render field('Port', String(created.port), 'port')}
-					{@render field('Database', created.database, 'database')}
-					{@render field('User', created.user, 'user')}
-					{@render field('Password', created.password, 'password')}
-					{@render field('Connection string', created.connection_string, 'connection_string')}
-
+					<CopyField label="Host" value={created.host} />
+					<CopyField label="Port" value={String(created.port)} />
+					<CopyField label="Database" value={created.database} />
+					<CopyField label="User" value={created.user} />
+					<CopyField label="Password" value={created.password} />
+					<CopyField label="Connection string" value={created.connection_string} />
 					<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
-					{@render field('JDBC URL', created.jdbc_url, 'jdbc_url')}
-					<p class="text-xs text-gray-600">
+					<CopyField label="JDBC URL" value={created.jdbc_url} />
+					<p class="text-xs text-muted">
 						Enter the username (<code>postgres</code>) and password separately in DBeaver. This
 						URL's <code>sslmode=require</code> encrypts the connection but does not verify the
 						server's identity. For <code>sslmode=verify-full</code>, which also verifies the
@@ -326,119 +293,127 @@
 				</div>
 			{/if}
 
-			{#if actionError}
-				<p class="text-sm text-red-600">{actionError}</p>
-			{/if}
-
 			{#if databases.length === 0}
-				<p>No databases yet.</p>
+				<EmptyState message="No databases yet." />
 			{:else}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<thead>
-						<tr class="border-b">
-							<th class="py-2">Name</th>
-							<th class="py-2">Owner</th>
-							<th class="py-2">Status</th>
-							<th class="py-2">Node</th>
-							<th class="py-2">Host</th>
-							<th class="py-2">Port</th>
-							<th class="py-2">Created</th>
-							<th class="py-2">Actions</th>
+						<tr>
+							<th>Name</th>
+							<th>Owner</th>
+							<th>Status</th>
+							<th>Node</th>
+							<th>Host</th>
+							<th>Port</th>
+							<th>Created</th>
+							<th></th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each databases as db (db.id)}
-							<tr class="border-b">
-								<td class="py-2">{db.name}</td>
-								<td class="py-2">{db.owner_email}</td>
-								<td class="py-2">{db.status}</td>
-								<td class="py-2">{db.node_id ?? '-'}</td>
-								<td class="py-2">{db.host ?? '-'}</td>
-								<td class="py-2">{db.port ?? '-'}</td>
-								<td class="py-2">{new Date(db.created_at).toLocaleString()}</td>
-								<td class="py-2">
+							<tr>
+								<td>{db.name}</td>
+								<td>{db.owner_email}</td>
+								<td><Status state={db.status} /></td>
+								<td class="font-mono text-xs">{db.node_id ?? '-'}</td>
+								<td class="font-mono text-xs">{db.host ?? '-'}</td>
+								<td class="font-mono text-xs">{db.port ?? '-'}</td>
+								<td>{new Date(db.created_at).toLocaleString()}</td>
+								<td>
 									<div class="flex gap-2">
 										{#if db.status === 'running' || db.status === 'failed'}
-											<button
-												class="rounded border border-red-600 px-2 py-1 text-xs text-red-600 disabled:opacity-50"
+											<Button
+												variant="danger"
+												size="sm"
 												disabled={actionTarget === db.id}
-												onclick={() => handleDelete(db)}
+												onclick={() => requestDelete(db)}
 											>
 												Delete
-											</button>
+											</Button>
 										{/if}
 										{#if db.status === 'failed'}
-											<button
-												class="rounded border px-2 py-1 text-xs disabled:opacity-50"
+											<Button
+												variant="secondary"
+												size="sm"
 												disabled={actionTarget === db.id}
-												onclick={() => handleRetry(db)}
+												onclick={() => requestRetry(db)}
 											>
 												Retry
-											</button>
+											</Button>
 										{/if}
 									</div>
 								</td>
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Users</h2>
+		<Panel title="Users">
 			{#if users.length === 0}
-				<p>No users yet.</p>
+				<EmptyState message="No users yet." />
 			{:else}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<thead>
-						<tr class="border-b">
-							<th class="py-2">Email</th>
-							<th class="py-2">Databases</th>
-							<th class="py-2">Created</th>
+						<tr>
+							<th>Email</th>
+							<th>Databases</th>
+							<th>Created</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each users as u (u.id)}
-							<tr class="border-b">
-								<td class="py-2">{u.email}</td>
-								<td class="py-2">{u.database_count}</td>
-								<td class="py-2">{new Date(u.created_at).toLocaleString()}</td>
+							<tr>
+								<td>{u.email}</td>
+								<td>{u.database_count}</td>
+								<td>{new Date(u.created_at).toLocaleString()}</td>
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Jobs</h2>
+		<Panel title="Jobs">
 			{#if jobs.length === 0}
-				<p>No jobs yet.</p>
+				<EmptyState message="No jobs yet." />
 			{:else}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<thead>
-						<tr class="border-b">
-							<th class="py-2">Kind</th>
-							<th class="py-2">Status</th>
-							<th class="py-2">Attempts</th>
-							<th class="py-2">Last error</th>
-							<th class="py-2">Created</th>
+						<tr>
+							<th>Kind</th>
+							<th>Status</th>
+							<th>Attempts</th>
+							<th>Last error</th>
+							<th>Created</th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each jobs as job (job.id)}
-							<tr class="border-b">
-								<td class="py-2">{job.kind}</td>
-								<td class="py-2">{job.status}</td>
-								<td class="py-2">{job.attempts}</td>
-								<td class="py-2">{job.last_error ?? '-'}</td>
-								<td class="py-2">{new Date(job.created_at).toLocaleString()}</td>
+							<tr>
+								<td>{job.kind}</td>
+								<td><Status state={job.status} /></td>
+								<td>{job.attempts}</td>
+								<td class="font-mono text-xs">{job.last_error ?? '-'}</td>
+								<td>{new Date(job.created_at).toLocaleString()}</td>
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 	{/if}
 </main>
+
+<ConfirmDialog
+	open={confirmAction !== null}
+	title={confirmAction?.kind === 'delete' ? 'Delete database' : 'Retry database'}
+	message={confirmAction?.kind === 'delete'
+		? `Delete database "${confirmAction.db.name}" (owned by ${confirmAction.db.owner_email})? This cannot be undone.`
+		: `Retry database "${confirmAction?.db.name}" (owned by ${confirmAction?.db.owner_email})?`}
+	confirmLabel={confirmAction?.kind === 'delete' ? 'Delete' : 'Retry'}
+	danger={confirmAction?.kind === 'delete'}
+	onconfirm={confirmPending}
+	oncancel={() => (confirmAction = null)}
+/>

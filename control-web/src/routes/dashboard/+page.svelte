@@ -2,11 +2,24 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { errorMessage, postJSON, type CreateDatabaseResult, type Database, type User } from '$lib/api';
+	import { pushToast } from '$lib/toast.svelte';
+	import TopBar from '$lib/components/TopBar.svelte';
+	import StatusRail from '$lib/components/StatusRail.svelte';
+	import Panel from '$lib/components/Panel.svelte';
+	import Field from '$lib/components/Field.svelte';
+	import Input from '$lib/components/Input.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import Table from '$lib/components/Table.svelte';
+	import Status from '$lib/components/Status.svelte';
+	import CopyField from '$lib/components/CopyField.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let user: User | null = $state(null);
 	let databases: Database[] = $state([]);
 	let loading: boolean = $state(true);
 	let error: string = $state('');
+	let endpoint: string = $state('/api');
 
 	let createName: string = $state('');
 	let createSizeGB: number = $state(1);
@@ -21,9 +34,8 @@
 	let createdPassword: string = $state('');
 	let createdConnectionString: string = $state('');
 	let createdJDBCURL: string = $state('');
-	let copiedField: string = $state('');
 
-	let actionError: string = $state('');
+	let deleteTarget: Database | null = $state(null);
 	let actionTarget: string = $state('');
 
 	const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -32,6 +44,8 @@
 	const createdDatabase = $derived(databases.find((d) => d.id === createdID) ?? null);
 	const connectionString = $derived(createdDatabase?.status === 'running' ? createdConnectionString : '');
 	const jdbcURL = $derived(createdDatabase?.status === 'running' ? createdJDBCURL : '');
+	const databaseCount = $derived(databases.length);
+	const provisionedGB = $derived(databases.reduce((sum, d) => sum + d.size_gb, 0));
 
 	function pollDatabase(id: string) {
 		if (pollTimers.has(id)) return;
@@ -62,6 +76,7 @@
 	}
 
 	onMount(async () => {
+		endpoint = `${location.host}/api`;
 		try {
 			const meRes = await fetch('/api/me');
 			if (!meRes.ok) {
@@ -104,19 +119,12 @@
 			createdPassword = result.password;
 			createdConnectionString = result.connection_string;
 			createdJDBCURL = result.jdbc_url;
-			copiedField = '';
 			createName = '';
 			createSizeGB = 1;
 			await loadDatabases();
 		} finally {
 			creating = false;
 		}
-	}
-
-	async function copyField(field: string, value: string) {
-		if (!value) return;
-		await navigator.clipboard.writeText(value);
-		copiedField = field;
 	}
 
 	function dismissCreated() {
@@ -128,17 +136,21 @@
 		createdPassword = '';
 		createdConnectionString = '';
 		createdJDBCURL = '';
-		copiedField = '';
 	}
 
-	async function handleDelete(db: Database) {
-		if (!confirm(`Delete database "${db.name}"? This cannot be undone.`)) return;
-		actionError = '';
+	function requestDelete(db: Database) {
+		deleteTarget = db;
+	}
+
+	async function confirmDelete() {
+		const db = deleteTarget;
+		if (!db) return;
+		deleteTarget = null;
 		actionTarget = db.id;
 		try {
 			const res = await fetch(`/api/databases/${db.id}`, { method: 'DELETE' });
 			if (!res.ok) {
-				actionError = await errorMessage(res);
+				pushToast('error', await errorMessage(res));
 				return;
 			}
 			databases = databases.filter((d) => d.id !== db.id);
@@ -148,91 +160,58 @@
 				clearTimeout(timer);
 				pollTimers.delete(db.id);
 			}
+			pushToast('success', `Deleted "${db.name}".`);
 		} finally {
 			actionTarget = '';
 		}
 	}
 </script>
 
-<main class="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 p-6">
-	<header class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold">Dashboard</h1>
-		<nav class="flex items-center gap-4">
-			<a class="underline" href="/billing">Billing</a>
-			{#if user?.is_admin}
-				<a class="underline" href="/admin">Admin</a>
-			{/if}
-			{#if user}
-				<span class="font-mono text-sm">{user.email}</span>
-			{/if}
-			<button class="underline" onclick={handleLogout}>Log out</button>
-		</nav>
-	</header>
+<TopBar
+	links={[
+		{ href: '/billing', label: 'Billing' },
+		...(user?.is_admin ? [{ href: '/admin', label: 'Admin' }] : [])
+	]}
+	userEmail={user?.email}
+	onLogout={handleLogout}
+/>
+<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
 
+<main class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
 	{#if loading}
-		<p>Loading...</p>
+		<p class="text-muted">Loading...</p>
 	{:else if error}
-		<p class="text-sm text-red-600">{error}</p>
+		<p class="text-sm text-error">{error}</p>
 	{:else}
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">New database</h2>
-			<form class="flex flex-wrap items-end gap-3 rounded border p-3" onsubmit={handleCreate}>
-				<label class="flex flex-col gap-1 text-sm">
-					Name
-					<input class="rounded border px-3 py-2" type="text" bind:value={createName} required />
-				</label>
-				<label class="flex flex-col gap-1 text-sm">
-					Size (GB)
-					<input
-						class="w-24 rounded border px-3 py-2"
-						type="number"
-						min="1"
-						max="20"
-						bind:value={createSizeGB}
-						required
-					/>
-				</label>
-				<p class="text-sm text-gray-600">
-					~ IDR {monthlyPriceIDR.toLocaleString('id-ID')} / month
-				</p>
-				<button class="rounded bg-black px-4 py-2 text-white disabled:opacity-50" disabled={creating}>
-					Create
-				</button>
+		<Panel title="New database">
+			<form class="flex flex-wrap items-end gap-3" onsubmit={handleCreate}>
+				<Field label="Name" id="create-name">
+					<Input id="create-name" type="text" bind:value={createName} required />
+				</Field>
+				<Field label="Size (GB)" id="create-size">
+					<Input id="create-size" type="number" min={1} max={20} bind:value={createSizeGB} required />
+				</Field>
+				<p class="pb-3 text-sm text-muted">~ IDR {monthlyPriceIDR.toLocaleString('id-ID')} / month</p>
+				<Button type="submit" disabled={creating}>Create</Button>
 			</form>
 
 			{#if createError}
-				<p class="text-sm text-red-600">{createError}</p>
+				<p class="text-sm text-error">{createError}</p>
 			{/if}
 
-			{#snippet field(label: string, value: string, key: string)}
-				<div class="flex items-center gap-2">
-					<span class="w-24 shrink-0 text-xs font-semibold">{label}</span>
-					<input
-						class="flex-1 rounded border px-2 py-1 font-mono text-xs"
-						readonly
-						{value}
-						onclick={(e) => e.currentTarget.select()}
-					/>
-					<button class="rounded border px-2 py-1 text-xs" onclick={() => copyField(key, value)}>
-						{copiedField === key ? 'Copied' : 'Copy'}
-					</button>
-				</div>
-			{/snippet}
-
 			{#if createdID}
-				<div class="flex flex-col gap-2 rounded border border-amber-400 bg-amber-50 p-3 text-sm">
+				<div class="flex flex-col gap-2 rounded-md border border-warning bg-bg p-3 text-sm">
 					<p>Database created. This password is shown once and will not be shown again.</p>
-					{@render field('Host', createdHost, 'host')}
-					{@render field('Port', String(createdPort ?? ''), 'port')}
-					{@render field('Database', createdDatabaseName, 'database')}
-					{@render field('User', createdUser, 'user')}
-					{@render field('Password', createdPassword, 'password')}
+					<CopyField label="Host" value={createdHost} />
+					<CopyField label="Port" value={String(createdPort ?? '')} />
+					<CopyField label="Database" value={createdDatabaseName} />
+					<CopyField label="User" value={createdUser} />
+					<CopyField label="Password" value={createdPassword} />
 					{#if connectionString}
-						{@render field('Connection string', connectionString, 'connection_string')}
-
+						<CopyField label="Connection string" value={connectionString} />
 						<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
-						{@render field('JDBC URL', jdbcURL, 'jdbc_url')}
-						<p class="text-xs text-gray-600">
+						<CopyField label="JDBC URL" value={jdbcURL} />
+						<p class="text-xs text-muted">
 							Enter the username (<code>postgres</code>) and password separately in DBeaver. This
 							URL's <code>sslmode=require</code> encrypts the connection but does not verify the
 							server's identity. For <code>sslmode=verify-full</code>, which also verifies the
@@ -247,62 +226,64 @@
 							<code>sslmode=verify-full&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code>.
 						</p>
 					{:else if createdDatabase?.status === 'failed'}
-						<p class="text-red-600">Provisioning failed. Delete this database and try again.</p>
+						<p class="text-error">Provisioning failed. Delete this database and try again.</p>
 					{:else}
-						<p class="text-xs text-gray-600">
-							Provisioning... the connection string will appear here once the database is running.
-						</p>
+						<Status state="provisioning" label="Provisioning... the connection string will appear here once running." />
 					{/if}
-					<button class="self-start text-xs underline" onclick={dismissCreated}>Dismiss</button>
+					<Button variant="ghost" size="sm" onclick={dismissCreated}>Dismiss</Button>
 				</div>
 			{/if}
-		</section>
+		</Panel>
 
-		<section class="flex flex-col gap-2">
-			<h2 class="text-xl font-semibold">Your databases</h2>
-
-			{#if actionError}
-				<p class="text-sm text-red-600">{actionError}</p>
-			{/if}
-
+		<Panel title="Your databases">
 			{#if databases.length === 0}
-				<p>No databases yet.</p>
+				<EmptyState message="No databases yet." />
 			{:else}
-				<table class="w-full border-collapse text-left">
+				<Table>
 					<thead>
-						<tr class="border-b">
-							<th class="py-2">Name</th>
-							<th class="py-2">Size (GB)</th>
-							<th class="py-2">Status</th>
-							<th class="py-2">Host</th>
-							<th class="py-2">Created</th>
-							<th class="py-2">Actions</th>
+						<tr>
+							<th>Name</th>
+							<th>Size (GB)</th>
+							<th>Status</th>
+							<th>Host</th>
+							<th>Created</th>
+							<th></th>
 						</tr>
 					</thead>
 					<tbody>
 						{#each databases as db (db.id)}
-							<tr class="border-b">
-								<td class="py-2">{db.name}</td>
-								<td class="py-2">{db.size_gb}</td>
-								<td class="py-2" class:text-red-600={db.status === 'failed'}>{db.status}</td>
-								<td class="py-2 font-mono text-xs">{db.public_host ? `${db.public_host}:5432` : '-'}</td>
-								<td class="py-2">{new Date(db.created_at).toLocaleString()}</td>
-								<td class="py-2">
+							<tr>
+								<td>{db.name}</td>
+								<td>{db.size_gb}</td>
+								<td><Status state={db.status} /></td>
+								<td class="font-mono text-xs">{db.public_host ? `${db.public_host}:5432` : '-'}</td>
+								<td>{new Date(db.created_at).toLocaleString()}</td>
+								<td>
 									{#if db.status === 'running' || db.status === 'failed'}
-										<button
-											class="rounded border border-red-600 px-2 py-1 text-xs text-red-600 disabled:opacity-50"
+										<Button
+											variant="danger"
+											size="sm"
 											disabled={actionTarget === db.id}
-											onclick={() => handleDelete(db)}
+											onclick={() => requestDelete(db)}
 										>
 											Delete
-										</button>
+										</Button>
 									{/if}
 								</td>
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</Table>
 			{/if}
-		</section>
+		</Panel>
 	{/if}
 </main>
+
+<ConfirmDialog
+	open={deleteTarget !== null}
+	title="Delete database"
+	message={`Delete database "${deleteTarget?.name}"? This cannot be undone.`}
+	confirmLabel="Delete"
+	onconfirm={confirmDelete}
+	oncancel={() => (deleteTarget = null)}
+/>
