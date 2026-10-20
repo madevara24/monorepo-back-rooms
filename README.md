@@ -99,16 +99,17 @@ Repo secrets, for `.github/workflows/deploy.yml`:
 
 ### Deploying
 
-`deploy.yml` is `workflow_dispatch` only until the first cutover is
-verified:
+`deploy.yml` runs on every push to `main`, and can also be triggered
+manually:
 
 1. A `gate` job runs the same checks as `ci.yml` (`go vet`, `go test`, the
    web build).
 2. A `deploy` job SSHes into the VPS and calls the Dokploy API
    (`compose.deploy`) for `DOKPLOY_MBR_COMPOSE_ID`, then polls
    `https://mbr.madevara.com/healthz` for up to 300s until its `commit`
-   field equals the dispatched commit SHA.
+   field equals the deployed commit SHA.
 
-To deploy: open the Actions tab, run `Deploy` manually, and watch it go
-green. Once a manual dispatch has gone green, add a `push: branches:
-[main]` trigger to `deploy.yml` to make deploys automatic.
+Merging to `main` deploys automatically. Deploys run one at a time
+(`concurrency: group: deploy`), so a merge queued behind an in-flight
+deploy waits instead of racing it. To deploy without a merge, open the
+Actions tab and run `Deploy` manually.
