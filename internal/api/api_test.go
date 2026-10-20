@@ -12,6 +12,7 @@ import (
 
 	"github.com/madevara24/monorepo-back-rooms/internal/api"
 	"github.com/madevara24/monorepo-back-rooms/internal/credentials"
+	"github.com/madevara24/monorepo-back-rooms/internal/routes"
 	"github.com/madevara24/monorepo-back-rooms/internal/storetest"
 )
 
@@ -385,8 +386,10 @@ func TestCreateDatabaseProvisionsAndQueuesJob(t *testing.T) {
 		t.Fatalf("POST /api/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
 	}
 	var created struct {
-		ID       string `json:"id"`
-		Password string `json:"password"`
+		ID               string `json:"id"`
+		Password         string `json:"password"`
+		ConnectionString string `json:"connection_string"`
+		JDBCURL          string `json:"jdbc_url"`
 	}
 	decode(t, resp, &created)
 	if created.ID == "" {
@@ -409,6 +412,12 @@ func TestCreateDatabaseProvisionsAndQueuesJob(t *testing.T) {
 	}
 	if slug == "" {
 		t.Fatalf("slug was not set")
+	}
+	if want := routes.ConnectionString(slug, created.Password); created.ConnectionString != want {
+		t.Fatalf("create response connection_string = %q, want %q", created.ConnectionString, want)
+	}
+	if want := routes.JDBCConnectionString(slug); created.JDBCURL != want {
+		t.Fatalf("create response jdbc_url = %q, want %q", created.JDBCURL, want)
 	}
 	if !nodeID.Valid || nodeID.String != "node-create" {
 		t.Fatalf("node_id = %+v, want node-create", nodeID)
