@@ -91,7 +91,7 @@ func TestBuildContainerConfigPreservesExistingBehavior(t *testing.T) {
 			t.Fatalf("config.Env = %v, want to contain %q", config.Env, w)
 		}
 	}
-	if hostConfig.Resources.Memory != spec.MemoryBytes || hostConfig.Resources.NanoCPUs != spec.NanoCPUs {
+	if hostConfig.Memory != spec.MemoryBytes || hostConfig.NanoCPUs != spec.NanoCPUs {
 		t.Fatalf("hostConfig.Resources = %+v, want memory %d and %d nanoCPUs", hostConfig.Resources, spec.MemoryBytes, spec.NanoCPUs)
 	}
 	if len(hostConfig.PortBindings[postgresContainerPort]) != 1 || hostConfig.PortBindings[postgresContainerPort][0].HostPort != "21000" {
