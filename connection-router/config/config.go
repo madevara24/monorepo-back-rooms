@@ -15,8 +15,13 @@ const defaultRoutesPath = "/etc/mbr/routes/mbr-routes.map"
 type Config struct {
 	// ListenAddr is the Postgres-facing data path, e.g. ":15432".
 	ListenAddr string
-	// HealthAddr is the loopback-only GET /healthz listener, e.g.
-	// "127.0.0.1:9099".
+	// HealthAddr is the GET /healthz listener's bind address inside
+	// the container, e.g. ":9099". Loopback-only exposure is enforced
+	// by Docker's port publishing (dokploy-compose.router.yml maps
+	// "127.0.0.1:9099:9099"), not by this bind address: Docker routes
+	// published ports to a container's external interface, not its
+	// own loopback, so binding to 127.0.0.1 here would make the
+	// published port unreachable.
 	HealthAddr string
 	RoutesPath string
 }
@@ -26,7 +31,7 @@ type Config struct {
 func Load() Config {
 	return Config{
 		ListenAddr: getEnv("ROUTER_ADDR", ":15432"),
-		HealthAddr: getEnv("ROUTER_HEALTH_ADDR", "127.0.0.1:9099"),
+		HealthAddr: getEnv("ROUTER_HEALTH_ADDR", ":9099"),
 		RoutesPath: getEnv("MBR_ROUTES_PATH", defaultRoutesPath),
 	}
 }

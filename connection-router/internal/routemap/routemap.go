@@ -60,6 +60,6 @@ func ParseFile(path string) (Map, error) {
 	if err != nil {
 		return nil, fmt.Errorf("routemap: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return Parse(bufio.NewReader(f))
 }

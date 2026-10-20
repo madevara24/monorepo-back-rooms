@@ -16,6 +16,10 @@ together by the root `go.work`:
   layering: `entities`, `repository` (Docker/volume adapters), `usecase`
   (provision/delete/reconcile/heartbeat), `handler` (HTTP, its own
   `/healthz`), `internal/container.go`.
+- `connection-router/` — the SNI-routing TCP proxy in front of the shared
+  tenant port `:5432` (`cmd/router`). See
+  [`connection-router/README.md`](connection-router/README.md) for the
+  handshake it implements, its config, and the migration/rollback runbook.
 - `control-web/` — SvelteKit frontend (static build). Routes: `/`,
   `/signup`, `/login`, `/dashboard`, `/billing`.
 - `compose.yaml` — local control Postgres.
@@ -107,6 +111,7 @@ Repo secrets, for `.github/workflows/deploy.yml`:
 | `VPS_USER` / `VPS_HOST` | SSH target. |
 | `DOKPLOY_KEY` | Dokploy API key, used from the VPS to call its own API. |
 | `DOKPLOY_MBR_COMPOSE_ID` | The Dokploy compose app id for `mbr`. |
+| `DOKPLOY_MBR_ROUTER_COMPOSE_ID` | The Dokploy compose app id for the separate `mbr-router` app (see [Production (connection router)](#production-connection-router)). Only used by the `deploy-router` job. |
 
 ### Deploying
 
@@ -118,12 +123,30 @@ manually:
 2. A `deploy` job SSHes into the VPS and calls the Dokploy API
    (`compose.deploy`) for `DOKPLOY_MBR_COMPOSE_ID`, then polls
    `https://mbr.madevara.com/healthz` for up to 300s until its `commit`
-   field equals the deployed commit SHA.
+   field equals the deployed commit SHA. This job always runs; it never
+   touches the router.
+3. A `deploy-router` job exists but only runs when the workflow is
+   dispatched manually with its `deploy_router` input checked. It
+   deploys the separate `mbr-router` app (`DOKPLOY_MBR_ROUTER_COMPOSE_ID`)
+   and polls its loopback-only `/healthz` over SSH. See
+   [`connection-router/README.md`](connection-router/README.md#migration-runbook)
+   for why this is deliberately not part of the normal push-to-main path.
 
-Merging to `main` deploys automatically. Deploys run one at a time
+Merging to `main` deploys `mbr-api`/`mbr-web` automatically; the router
+is never deployed by a merge. Deploys run one at a time
 (`concurrency: group: deploy`), so a merge queued behind an in-flight
 deploy waits instead of racing it. To deploy without a merge, open the
 Actions tab and run `Deploy` manually.
+
+## Production (connection router)
+
+`connection-router` deploys on the same VPS and Dokploy instance as
+`mbr-api`/`mbr-web`, but as its own, separate Dokploy compose app
+(`dokploy-compose.router.yml`), so a routine control-plane deploy never
+restarts the live `:5432` data path. Full details — the handshake it
+implements, its config, the Dokploy app setup, and the migration and
+rollback runbook for cutting it over from nginx — live in
+[`connection-router/README.md`](connection-router/README.md).
 
 ## Production (data plane)
 

@@ -1,0 +1,15 @@
+services:
+  mbr-router:
+    build:
+      context: .
+      dockerfile: connection-router/Dockerfile
+    restart: unless-stopped
+    environment:
+      ROUTER_ADDR: ":15432"
+      ROUTER_HEALTH_ADDR: ":9099"
+      MBR_ROUTES_PATH: "/etc/mbr/routes/mbr-routes.map"
+    volumes:
+      - /etc/mbr/routes:/etc/mbr/routes:ro
+    ports:
+      - "5432:15432"
+      - "127.0.0.1:9099:9099"

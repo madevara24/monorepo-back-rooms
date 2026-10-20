@@ -34,8 +34,8 @@ func newTestServer(routes routemap.Map) (*proxy.Server, string, func()) {
 		MaxConnections:   16,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	go s.Serve(ctx, ln)
-	return s, ln.Addr().String(), func() { cancel(); ln.Close() }
+	go func() { _ = s.Serve(ctx, ln) }()
+	return s, ln.Addr().String(), func() { cancel(); _ = ln.Close() }
 }
 
 // startBackend runs a fake tenant on 127.0.0.1:0 and returns its
@@ -56,14 +56,14 @@ func startBackend(t *testing.T, onConn func(net.Conn)) string {
 			go onConn(conn)
 		}
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return ln.Addr().String()
 }
 
 // directTLSBackend expects the raw ClientHello bytes with no
 // SSLRequest primer (the sslnegotiation=direct path), then echoes.
 func directTLSBackend(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	buf := make([]byte, 4096)
 	n, err := conn.Read(buf)
 	if err != nil {
@@ -76,7 +76,7 @@ func directTLSBackend(conn net.Conn) {
 // sslPrimedBackend expects the router to re-issue an 8-byte
 // SSLRequest, replies 'S', then echoes whatever arrives after.
 func sslPrimedBackend(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var hdr [8]byte
 	if _, err := io.ReadFull(conn, hdr[:]); err != nil {
 		return
@@ -138,7 +138,7 @@ func dial(t *testing.T, addr string) net.Conn {
 	if err != nil {
 		t.Fatalf("dial %s: %v", addr, err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }
 

@@ -101,7 +101,7 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 func (s *Server) handleConn(conn net.Conn) {
 	s.Metrics.ActiveConnections.Add(1)
 	defer s.Metrics.ActiveConnections.Add(-1)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.SetDeadline(time.Now().Add(s.HandshakeTimeout)); err != nil {
 		return
@@ -182,7 +182,7 @@ func (s *Server) handleDirectTLS(conn net.Conn, br *bufio.Reader) {
 	if backend == nil {
 		return
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	if err := forward(backend, hello.Raw, s.DialTimeout); err != nil {
 		return
@@ -212,7 +212,7 @@ func (s *Server) handleSSLRequest(conn net.Conn, br *bufio.Reader) {
 	if backend == nil {
 		return
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	if err := backend.SetDeadline(time.Now().Add(s.DialTimeout)); err != nil {
 		return

@@ -10,11 +10,12 @@ dev:
 
 test:
 	docker compose up -d control-db
-	go vet ./control-panel-service/... ./node-agent-service/...
-	DATABASE_URL_TEST=postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable go test ./control-panel-service/... ./node-agent-service/...
+	go vet ./control-panel-service/... ./node-agent-service/... ./connection-router/...
+	DATABASE_URL_TEST=postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable go test ./control-panel-service/... ./node-agent-service/... ./connection-router/...
 	cd control-web && npm run check
 
 build:
 	go build -o bin/api ./control-panel-service/cmd/api
 	go build -o bin/node ./node-agent-service/cmd/node
+	go build -o bin/router ./connection-router/cmd/router
 	cd control-web && npm run build

@@ -59,6 +59,27 @@ jobs:
           working-directory: node-agent-service
       - run: go test ./...
 
+  connection-router:
+    name: Go (connection-router)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: connection-router
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: connection-router/go.mod
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          working-directory: connection-router
+      - run: go test ./...
+      - name: Build the router image
+        run: docker build -f connection-router/Dockerfile .
+        working-directory: ${{ github.workspace }}
+
   web:
     name: Frontend
     runs-on: ubuntu-latest

@@ -38,7 +38,7 @@ func New(path string) (*Watcher, error) {
 		return nil, err
 	}
 	if err := fsw.Add(filepath.Dir(path)); err != nil {
-		fsw.Close()
+		_ = fsw.Close()
 		return nil, err
 	}
 
@@ -71,7 +71,7 @@ func (w *Watcher) Reload() {
 // in its own goroutine.
 func (w *Watcher) Run(ctx context.Context) {
 	name := filepath.Base(w.path)
-	defer w.fsw.Close()
+	defer func() { _ = w.fsw.Close() }()
 	for {
 		select {
 		case <-ctx.Done():
