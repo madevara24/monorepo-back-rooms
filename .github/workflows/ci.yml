@@ -7,6 +7,13 @@ on:
   workflow_call:
 
 jobs:
+  deploy-map:
+    name: Deploy map
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-deploy-stacks.sh
+
   control-panel-service:
     name: Go (control-panel-service)
     runs-on: ubuntu-latest

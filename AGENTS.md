@@ -4,6 +4,20 @@ A self-serve Postgres marketplace. A user picks a database name and a size in GB
 
 The full design and the reasoning behind each choice live in the vault note `Projects/MBR/`. This file is the repo's working summary.
 
+## Deploy contract (read first)
+
+Merging to `main` deploys. `auto_merge: true` in the task pipeline is production deploy authorization, not merge-only permission.
+
+A new deployable stack is not done until:
+
+1. it has its own Dokploy app/compose, or an explicit documented manual exception;
+2. `.github/workflows/deploy.yml` has a push-to-main job with a path filter for that stack;
+3. unrelated stack changes cannot restart it.
+
+If a new stack lacks a deploy path, the task is blocked and `auto_merge` stays false. A one-time cutover exception must be temporary and linked to a follow-up task; the router's manual gate is `MBR-19`, not the permanent state. Every merge is live only after the stack's health check reports the merged commit.
+
+The stack-to-deploy map and current exceptions are in `DEPLOY.md`.
+
 ## Architecture
 
 Two planes, never on the same host.
@@ -57,9 +71,9 @@ Work arrives as a PM-vault task note; the note body is the prompt, and a git-ign
 
 Leave `auto_merge` alone; the pipeline sets it, and the merge gate waits for CI. Rebase the task branch onto `main` when resuming after a block; the runner does not reconcile it for you.
 
-## Deploy
+## Deploy details
 
-`main` is the deploy branch. The deploy workflow is the production path; after MBR-15 it triggers on push to `main`. A merge is not live until `/healthz` reports the merge commit. `auto_merge: true` in the task pipeline is production deploy authorization, not just merge permission. If the deploy trigger is missing, fixing it is part of the task, not an ops afterthought.
+See the deploy contract above and `DEPLOY.md` for the stack map and path filters. A merge is not live until the stack's health check reports the merge commit.
 
 ## Conventions
 
