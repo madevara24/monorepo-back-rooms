@@ -2,25 +2,41 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/pkg/session"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/repository"
 )
 
-// heartbeatContainer and heartbeatCapacity mirror the shapes
-// node-agent-service/internal/handler and node-agent-service/internal/usecase
-// send as databaseResponse and capacityResponse. heartbeatRequest mirrors
-// node-agent-service/internal/usecase's heartbeatRequest; notably it
-// carries no agent version field, so a heartbeat never updates
-// nodes.version.
+// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
+// mirror the shapes node-agent-service/internal/usecase's
+// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
+// send. heartbeatRequest mirrors node-agent-service/internal/usecase's
+// heartbeatRequest; notably it carries no agent version field, so a
+// heartbeat never updates nodes.version.
 type heartbeatContainer struct {
-	ID     string `json:"id"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Status string `json:"status"`
+	ID      string                      `json:"id"`
+	Host    string                      `json:"host"`
+	Port    int                         `json:"port"`
+	Status  string                      `json:"status"`
+	Metrics *heartbeatConnectionMetrics `json:"metrics,omitempty"`
+}
+
+// heartbeatConnectionMetrics is one container's connection-pressure
+// snapshot. It is only present on heartbeats where the agent actually
+// collected metrics (every metricsInterval, not every heartbeat).
+type heartbeatConnectionMetrics struct {
+	Active                       int       `json:"active"`
+	Idle                         int       `json:"idle"`
+	IdleInTransaction            int       `json:"idle_in_transaction"`
+	MaxConnections               int       `json:"max_connections"`
+	SuperuserReservedConnections int       `json:"superuser_reserved_connections"`
+	MemoryLimitBytes             int64     `json:"memory_limit_bytes"`
+	CollectedAt                  time.Time `json:"collected_at"`
 }
 
 type heartbeatCapacity struct {
@@ -81,6 +97,28 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if err := repository.UpsertNodeContainers(r.Context(), h.DB, node.ID, containers); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not record containers")
 		return
+	}
+
+	// A metric write failing (e.g. the database was deleted between
+	// collection and this heartbeat landing) must not fail the
+	// heartbeat itself: the container report above already succeeded.
+	for _, c := range req.Containers {
+		if c.Metrics == nil {
+			continue
+		}
+		metric := entities.DatabaseMetric{
+			DatabaseID:                   c.ID,
+			Active:                       c.Metrics.Active,
+			Idle:                         c.Metrics.Idle,
+			IdleInTransaction:            c.Metrics.IdleInTransaction,
+			MaxConnections:               c.Metrics.MaxConnections,
+			SuperuserReservedConnections: c.Metrics.SuperuserReservedConnections,
+			MemoryLimitBytes:             c.Metrics.MemoryLimitBytes,
+			CollectedAt:                  c.Metrics.CollectedAt,
+		}
+		if err := repository.InsertDatabaseMetric(r.Context(), h.DB, metric); err != nil {
+			log.Printf("heartbeat: insert metric for %s: %v", c.ID, err)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})

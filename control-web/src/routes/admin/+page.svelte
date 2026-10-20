@@ -6,6 +6,7 @@
 		errorMessage,
 		postJSON,
 		type AdminDatabase,
+		type AdminDatabaseMetric,
 		type AdminJob,
 		type AdminNode,
 		type AdminOverview,
@@ -36,6 +37,8 @@
 	let databases: AdminDatabase[] = $state([]);
 	let nodes: AdminNode[] = $state([]);
 	let jobs: AdminJob[] = $state([]);
+	let databaseMetrics: AdminDatabaseMetric[] = $state([]);
+	let metricsError: string = $state('');
 
 	let createUserId: string = $state('');
 	let createName: string = $state('');
@@ -80,12 +83,13 @@
 				return;
 			}
 
-			[overview, users, databases, nodes, jobs] = await Promise.all([
+			[overview, users, databases, nodes, jobs, databaseMetrics] = await Promise.all([
 				loadJSON<AdminOverview>('/api/admin/overview'),
 				loadJSON<AdminUser[]>('/api/admin/users'),
 				loadJSON<AdminDatabase[]>('/api/admin/databases'),
 				loadJSON<AdminNode[]>('/api/admin/nodes'),
-				loadJSON<AdminJob[]>('/api/admin/jobs')
+				loadJSON<AdminJob[]>('/api/admin/jobs'),
+				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics')
 			]);
 			if (users.length > 0) {
 				createUserId = users[0].id;
@@ -97,6 +101,20 @@
 		}
 	});
 
+	async function reloadMetrics() {
+		metricsError = '';
+		try {
+			databaseMetrics = await loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics');
+		} catch (e) {
+			metricsError = e instanceof Error ? e.message : 'could not load database metrics';
+		}
+	}
+
+	function warningBadgeClass(level: string): string {
+		if (level === 'critical') return 'rounded px-2 py-1 text-xs font-semibold text-[var(--error)]';
+		if (level === 'warning') return 'rounded px-2 py-1 text-xs font-semibold text-[var(--warning)]';
+		return 'rounded px-2 py-1 text-xs font-semibold text-[var(--accent)]';
+	}
 	function formatCounts(counts: Record<string, number>): string {
 		const entries = Object.entries(counts);
 		if (entries.length === 0) return 'none';
@@ -343,6 +361,49 @@
 										{/if}
 									</div>
 								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</Table>
+			{/if}
+		</Panel>
+
+		<Panel title="Connection pressure">
+			<div class="mb-2 flex justify-end">
+				<Button variant="secondary" size="sm" onclick={reloadMetrics}>Refresh</Button>
+			</div>
+			{#if metricsError}
+				<p class="text-sm text-[var(--error)]">{metricsError}</p>
+			{/if}
+			{#if databaseMetrics.length === 0}
+				<EmptyState message="No metrics yet." />
+			{:else}
+				<Table>
+					<thead>
+						<tr>
+							<th>Database</th>
+							<th>Owner</th>
+							<th>Used / Max</th>
+							<th>%</th>
+							<th>Active</th>
+							<th>Idle</th>
+							<th>Idle in txn</th>
+							<th>Last collected</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each databaseMetrics as m (m.database_id)}
+							<tr>
+								<td>{m.database_name}</td>
+								<td>{m.owner_email}</td>
+								<td>{m.used} / {m.max_connections}</td>
+								<td>{m.used_percent.toFixed(0)}%</td>
+								<td>{m.active}</td>
+								<td>{m.idle}</td>
+								<td>{m.idle_in_transaction}</td>
+								<td>{new Date(m.collected_at).toLocaleString()}</td>
+								<td><span class={warningBadgeClass(m.warning_level)}>{m.warning_level}</span></td>
 							</tr>
 						{/each}
 					</tbody>

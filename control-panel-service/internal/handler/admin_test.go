@@ -38,6 +38,7 @@ func TestAdminRoutesRejectNonAdmin(t *testing.T) {
 		"/api/admin/databases",
 		"/api/admin/nodes",
 		"/api/admin/jobs",
+		"/api/admin/database-metrics",
 	} {
 		resp, err := client.Get(server.URL + path)
 		if err != nil {
@@ -276,6 +277,77 @@ func TestAdminJobsReturnsRecentJobs(t *testing.T) {
 	}
 	if rows[0]["kind"] != "provision" {
 		t.Fatalf("admin jobs row kind = %v, want provision", rows[0]["kind"])
+	}
+}
+
+// TestAdminDatabaseMetricsReportsWarningLevels covers the acceptance
+// criterion that a synthetic connection flood crosses the 70% and 90%
+// warning thresholds: three databases at increasing pressure must land
+// in "ok", "warning", and "critical" respectively.
+func TestAdminDatabaseMetricsReportsWarningLevels(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-metrics@example.com")
+	promoteToAdmin(t, db, "admin-metrics@example.com")
+
+	var ownerID string
+	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-metrics@example.com").Scan(&ownerID); err != nil {
+		t.Fatalf("look up user id: %v", err)
+	}
+
+	okDB := insertDatabase(t, db, ownerID, "metrics-ok")
+	warningDB := insertDatabase(t, db, ownerID, "metrics-warning")
+	criticalDB := insertDatabase(t, db, ownerID, "metrics-critical")
+
+	insertMetric(t, db, okDB, 10, 0, 0, 100)
+	insertMetric(t, db, warningDB, 71, 0, 0, 100)
+	insertMetric(t, db, criticalDB, 95, 0, 0, 100)
+
+	resp, err := client.Get(server.URL + "/api/admin/database-metrics")
+	if err != nil {
+		t.Fatalf("GET /api/admin/database-metrics: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/admin/database-metrics = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var rows []map[string]any
+	decode(t, resp, &rows)
+	if len(rows) != 3 {
+		t.Fatalf("admin database-metrics rows = %d, want 3", len(rows))
+	}
+
+	levels := map[string]string{}
+	for _, row := range rows {
+		levels[row["database_id"].(string)] = row["warning_level"].(string)
+	}
+	if levels[okDB] != "ok" {
+		t.Fatalf("warning_level for 10%% usage = %q, want ok", levels[okDB])
+	}
+	if levels[warningDB] != "warning" {
+		t.Fatalf("warning_level for 71%% usage = %q, want warning", levels[warningDB])
+	}
+	if levels[criticalDB] != "critical" {
+		t.Fatalf("warning_level for 95%% usage = %q, want critical", levels[criticalDB])
+	}
+}
+
+func insertDatabase(t *testing.T, db *sql.DB, userID, name string) string {
+	t.Helper()
+	var id string
+	if err := db.QueryRow(`
+		INSERT INTO databases (user_id, name, size_gb, status) VALUES ($1, $2, 5, 'running') RETURNING id
+	`, userID, name).Scan(&id); err != nil {
+		t.Fatalf("insert database fixture: %v", err)
+	}
+	return id
+}
+
+func insertMetric(t *testing.T, db *sql.DB, databaseID string, active, idle, idleInTxn, maxConnections int) {
+	t.Helper()
+	if _, err := db.Exec(`
+		INSERT INTO database_metrics (database_id, active, idle, idle_in_transaction, max_connections, superuser_reserved_connections, memory_limit_bytes, collected_at)
+		VALUES ($1, $2, $3, $4, $5, 3, 536870912, now())
+	`, databaseID, active, idle, idleInTxn, maxConnections); err != nil {
+		t.Fatalf("insert database_metrics fixture: %v", err)
 	}
 }
 

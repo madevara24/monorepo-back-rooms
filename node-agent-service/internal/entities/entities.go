@@ -29,6 +29,18 @@ type Container struct {
 	Status      string
 }
 
+// ConnectionMetrics is one tenant container's backend connection counts
+// and limits, collected read-only over the container's local socket, plus
+// the container's configured memory limit (the plan's memory limit).
+type ConnectionMetrics struct {
+	Active                       int
+	Idle                         int
+	IdleInTransaction            int
+	MaxConnections               int
+	SuperuserReservedConnections int
+	MemoryLimitBytes             int64
+}
+
 // ContainerSpec describes the tenant container to create.
 type ContainerSpec struct {
 	DatabaseID  string

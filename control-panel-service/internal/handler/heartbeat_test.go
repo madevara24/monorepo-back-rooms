@@ -144,6 +144,47 @@ func TestAgentHeartbeatUpdatesCapacityAndUpsertsContainers(t *testing.T) {
 	}
 }
 
+// TestAgentHeartbeatRecordsConnectionMetrics covers the agent attaching a
+// metrics snapshot to a container entry: the control plane must record it
+// in database_metrics.
+func TestAgentHeartbeatRecordsConnectionMetrics(t *testing.T) {
+	server, _, db := newTestServer(t)
+	insertNodeWithToken(t, db, "node-metrics", "metrics-token")
+	databaseID := insertRunningDatabaseForNode(t, db, "node-metrics")
+
+	resp := heartbeat(t, server.URL, "metrics-token", map[string]any{
+		"node_id": "node-metrics",
+		"host":    "10.0.0.5",
+		"capacity": map[string]any{
+			"port_range_min": 21000, "port_range_max": 21999, "ports_total": 1000, "ports_used": 1,
+		},
+		"containers": []map[string]any{
+			{
+				"id": databaseID, "host": "10.0.0.5", "port": 21000, "status": "running",
+				"metrics": map[string]any{
+					"active": 71, "idle": 2, "idle_in_transaction": 0,
+					"max_connections": 100, "superuser_reserved_connections": 3,
+					"memory_limit_bytes": 536870912, "collected_at": "2026-01-01T00:00:00Z",
+				},
+			},
+		},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat with metrics = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	_ = resp.Body.Close()
+
+	var active, maxConnections int
+	if err := db.QueryRow(`
+		SELECT active, max_connections FROM database_metrics WHERE database_id = $1
+	`, databaseID).Scan(&active, &maxConnections); err != nil {
+		t.Fatalf("look up recorded metric: %v", err)
+	}
+	if active != 71 || maxConnections != 100 {
+		t.Fatalf("recorded metric active/max = %d/%d, want 71/100", active, maxConnections)
+	}
+}
+
 func insertRunningDatabaseForNode(t *testing.T, db *sql.DB, nodeID string) string {
 	t.Helper()
 	var userID string

@@ -241,6 +241,78 @@ func (h *Handler) handleAdminRetryDatabase(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusAccepted, toDatabaseResponse(d))
 }
 
+// warningThresholdPercent and criticalThresholdPercent are the admin UI's
+// connection-pressure warning cutoffs. v1 has no alert channel; they only
+// drive the badge shown on GET /api/admin/database-metrics.
+const (
+	warningThresholdPercent  = 70.0
+	criticalThresholdPercent = 90.0
+)
+
+func connectionWarningLevel(usedPercent float64) string {
+	switch {
+	case usedPercent >= criticalThresholdPercent:
+		return "critical"
+	case usedPercent >= warningThresholdPercent:
+		return "warning"
+	default:
+		return "ok"
+	}
+}
+
+type adminDatabaseMetricResponse struct {
+	DatabaseID                   string    `json:"database_id"`
+	DatabaseName                 string    `json:"database_name"`
+	OwnerEmail                   string    `json:"owner_email"`
+	Active                       int       `json:"active"`
+	Idle                         int       `json:"idle"`
+	IdleInTransaction            int       `json:"idle_in_transaction"`
+	Used                         int       `json:"used"`
+	MaxConnections               int       `json:"max_connections"`
+	SuperuserReservedConnections int       `json:"superuser_reserved_connections"`
+	UsedPercent                  float64   `json:"used_percent"`
+	WarningLevel                 string    `json:"warning_level"`
+	MemoryLimitBytes             int64     `json:"memory_limit_bytes"`
+	CollectedAt                  time.Time `json:"collected_at"`
+}
+
+// handleAdminDatabaseMetrics returns each database's latest
+// connection-pressure snapshot: used/max connections, the state
+// breakdown, when it was collected, and a 70%/90% warning level. There is
+// no alert channel in v1; this is the only place the warning surfaces.
+func (h *Handler) handleAdminDatabaseMetrics(w http.ResponseWriter, r *http.Request) {
+	rows, err := repository.LatestDatabaseMetrics(r.Context(), h.DB)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load database metrics")
+		return
+	}
+
+	out := make([]adminDatabaseMetricResponse, len(rows))
+	for i, m := range rows {
+		used := m.Active + m.Idle + m.IdleInTransaction
+		var usedPercent float64
+		if m.MaxConnections > 0 {
+			usedPercent = float64(used) / float64(m.MaxConnections) * 100
+		}
+		out[i] = adminDatabaseMetricResponse{
+			DatabaseID:                   m.DatabaseID,
+			DatabaseName:                 m.DatabaseName,
+			OwnerEmail:                   m.OwnerEmail,
+			Active:                       m.Active,
+			Idle:                         m.Idle,
+			IdleInTransaction:            m.IdleInTransaction,
+			Used:                         used,
+			MaxConnections:               m.MaxConnections,
+			SuperuserReservedConnections: m.SuperuserReservedConnections,
+			UsedPercent:                  usedPercent,
+			WarningLevel:                 connectionWarningLevel(usedPercent),
+			MemoryLimitBytes:             m.MemoryLimitBytes,
+			CollectedAt:                  m.CollectedAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 type adminJobResponse struct {
 	ID        string    `json:"id"`
 	Kind      string    `json:"kind"`

@@ -94,6 +94,21 @@ type Job struct {
 	UpdatedAt time.Time
 }
 
+// DatabaseMetric is one connection-pressure snapshot the agent collected
+// from a tenant container, keyed by when the agent collected it (not when
+// the control plane received it).
+type DatabaseMetric struct {
+	ID                           int64
+	DatabaseID                   string
+	Active                       int
+	Idle                         int
+	IdleInTransaction            int
+	MaxConnections               int
+	SuperuserReservedConnections int
+	MemoryLimitBytes             int64
+	CollectedAt                  time.Time
+}
+
 // Invoice is a billing period for a user. Payment only flips the status;
 // no money moves.
 type Invoice struct {

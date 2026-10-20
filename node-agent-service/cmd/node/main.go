@@ -23,6 +23,11 @@ var commit = "unknown"
 
 const heartbeatInterval = 30 * time.Second
 
+// metricsInterval is how often connection-pressure metrics are collected,
+// decoupled from heartbeatInterval: the task wants a 60s collection
+// cadence regardless of how often the heartbeat itself is sent.
+const metricsInterval = 60 * time.Second
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -36,7 +41,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go c.Node.RunLoop(ctx, cfg.ControlURL, cfg.ControlToken, heartbeatInterval)
+	go c.Node.RunLoop(ctx, cfg.ControlURL, cfg.ControlToken, heartbeatInterval, metricsInterval)
 
 	tlsConfig, err := serverTLSConfig(cfg.TLSCert, cfg.TLSKey, cfg.ClientCA)
 	if err != nil {

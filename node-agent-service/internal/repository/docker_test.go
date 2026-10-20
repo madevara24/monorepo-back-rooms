@@ -99,6 +99,25 @@ func TestBuildContainerConfigPreservesExistingBehavior(t *testing.T) {
 	}
 }
 
+func TestParseConnectionStats(t *testing.T) {
+	m, err := parseConnectionStats("3,5,1,100,3\n")
+	if err != nil {
+		t.Fatalf("parseConnectionStats: %v", err)
+	}
+	want := entities.ConnectionMetrics{Active: 3, Idle: 5, IdleInTransaction: 1, MaxConnections: 100, SuperuserReservedConnections: 3}
+	if m != want {
+		t.Fatalf("parseConnectionStats = %+v, want %+v", m, want)
+	}
+}
+
+func TestParseConnectionStatsRejectsMalformedOutput(t *testing.T) {
+	for _, out := range []string{"", "3,5,1,100", "a,b,c,d,e"} {
+		if _, err := parseConnectionStats(out); err == nil {
+			t.Fatalf("parseConnectionStats(%q) = nil error, want an error", out)
+		}
+	}
+}
+
 func TestTenantHBAConfRequiresSSLOnly(t *testing.T) {
 	conf := tenantHBAConf()
 
