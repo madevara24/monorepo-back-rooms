@@ -21,6 +21,10 @@ jobs:
       control: ${{ steps.force.outputs.control || steps.filter.outputs.control }}
       router: ${{ steps.force.outputs.router || steps.filter.outputs.router }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Force both stacks on manual dispatch
         id: force
         if: github.event_name == 'workflow_dispatch'
@@ -38,9 +42,11 @@ jobs:
               - 'control-panel-service/**'
               - 'control-web/**'
               - 'dokploy-compose.yml'
+              - '.github/workflows/deploy.yml'
             router:
               - 'connection-router/**'
               - 'dokploy-compose.router.yml'
+              - '.github/workflows/deploy.yml'
 
   deploy:
     name: Deploy
