@@ -27,7 +27,8 @@ type Session struct {
 // Database is a tenant database row. Slug, NodeID, Host, Port, and
 // PasswordEncrypted are nil until the job worker provisions the row; Slug
 // is assigned at creation time but the others wait on the agent's
-// response.
+// response. PlanID and PriceIDRMonth are nil for rows created before
+// plans existed, and for any row created without picking one.
 type Database struct {
 	ID                string
 	UserID            string
@@ -41,6 +42,26 @@ type Database struct {
 	PasswordEncrypted []byte
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	PlanID            *string
+	PriceIDRMonth     *int64
+}
+
+// Plan is a purchasable database package: a fixed size and a monthly
+// price. Deactivating a plan (Active = false) hides it from GET /api/plans
+// and blocks new purchases without touching databases that already
+// reference it.
+type Plan struct {
+	ID            string
+	Slug          string
+	Name          string
+	SizeGB        int
+	PriceIDRMonth int64
+	Tagline       string
+	Badge         string
+	SortOrder     int
+	Active        bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Node is a registered mbr-node agent. TokenHash is the SHA-256 hash of

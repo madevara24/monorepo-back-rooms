@@ -40,6 +40,8 @@ func NewMux(h *Handler) *http.ServeMux {
 	mux.HandleFunc("POST /api/auth/logout", h.handleLogout)
 	mux.HandleFunc("GET /api/me", h.requireAuth(h.handleMe))
 
+	mux.HandleFunc("GET /api/plans", h.handleListPlans)
+
 	mux.HandleFunc("GET /api/databases", h.requireAuth(h.handleListDatabases))
 	mux.HandleFunc("GET /api/databases/{id}", h.requireAuth(h.handleGetDatabase))
 	mux.HandleFunc("POST /api/databases", h.requireAuth(h.handleCreateDatabase))

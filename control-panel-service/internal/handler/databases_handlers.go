@@ -16,14 +16,17 @@ import (
 // databaseResponse is the tenant-facing shape of a database row. It
 // reports the public hostname a client connects through, never the
 // internal node address; admin responses keep that separately (see
-// adminDatabaseResponse in admin_handlers.go).
+// adminDatabaseResponse in admin_handlers.go). PlanID and PriceIDRMonth
+// are nil for a database created without picking a plan.
 type databaseResponse struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	SizeGB     int       `json:"size_gb"`
-	Status     string    `json:"status"`
-	PublicHost *string   `json:"public_host"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	SizeGB        int       `json:"size_gb"`
+	Status        string    `json:"status"`
+	PublicHost    *string   `json:"public_host"`
+	CreatedAt     time.Time `json:"created_at"`
+	PlanID        *string   `json:"plan_id"`
+	PriceIDRMonth *int64    `json:"price_idr_month"`
 }
 
 func toDatabaseResponse(d entities.Database) databaseResponse {
@@ -33,12 +36,14 @@ func toDatabaseResponse(d entities.Database) databaseResponse {
 		publicHost = &h
 	}
 	return databaseResponse{
-		ID:         d.ID,
-		Name:       d.Name,
-		SizeGB:     d.SizeGB,
-		Status:     d.Status,
-		PublicHost: publicHost,
-		CreatedAt:  d.CreatedAt,
+		ID:            d.ID,
+		Name:          d.Name,
+		SizeGB:        d.SizeGB,
+		Status:        d.Status,
+		PublicHost:    publicHost,
+		CreatedAt:     d.CreatedAt,
+		PlanID:        d.PlanID,
+		PriceIDRMonth: d.PriceIDRMonth,
 	}
 }
 
@@ -74,9 +79,16 @@ func (h *Handler) handleGetDatabase(w http.ResponseWriter, r *http.Request) {
 }
 
 type createDatabaseRequest struct {
-	Name   string `json:"name"`
-	SizeGB int    `json:"size_gb"`
+	Name   string  `json:"name"`
+	SizeGB *int    `json:"size_gb"`
+	PlanID *string `json:"plan_id"`
 }
+
+// defaultPricePerGBIDRMonth is the flat per-GB price charged when a
+// database is created without picking a plan, e.g. through
+// POST /api/admin/databases. It mirrors the price control-web has always
+// charged for a free-form size_gb.
+const defaultPricePerGBIDRMonth = 10000
 
 // createDatabaseResponse is returned exactly once, by the create
 // endpoints, since it is the only time the plaintext password is
@@ -104,10 +116,12 @@ var errNoSlugAvailable = errors.New("could not generate a unique slug")
 // POST /api/databases and the admin's POST /api/admin/databases: it picks
 // a node, generates a slug and a password, encrypts the password at rest,
 // and queues the "provision" job that will carry the row to "running".
-// The plaintext password is returned here and only here. It returns
-// whatever error repository.AnyAvailableNode produced (sql.ErrNoRows when
-// no node is free) so the caller can map it to the right status code.
-func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, sizeGB int) (entities.Database, string, error) {
+// The plaintext password is returned here and only here. planID is nil
+// for a database created without picking a plan; priceIDRMonth is the
+// price snapshotted onto the row either way. It returns whatever error
+// repository.AnyAvailableNode produced (sql.ErrNoRows when no node is
+// free) so the caller can map it to the right status code.
+func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, sizeGB int, planID *string, priceIDRMonth int64) (entities.Database, string, error) {
 	node, err := repository.AnyAvailableNode(ctx, h.DB)
 	if err != nil {
 		return entities.Database{}, "", err
@@ -129,7 +143,7 @@ func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, si
 			return entities.Database{}, "", err
 		}
 
-		created, err = repository.CreateDatabaseAndQueueProvision(ctx, h.DB, userID, name, sizeGB, slug, node.ID, encrypted)
+		created, err = repository.CreateDatabaseAndQueueProvision(ctx, h.DB, userID, name, sizeGB, slug, node.ID, encrypted, planID, priceIDRMonth)
 		if errors.Is(err, repository.ErrSlugTaken) {
 			continue
 		}
@@ -155,6 +169,30 @@ func validateCreateDatabaseRequest(name string, sizeGB int) string {
 	return ""
 }
 
+// resolveDatabasePlan works out the size and price a create request
+// should use. With no plan_id, it is today's free-form path: size_gb must
+// be given and in range, and the price is the flat per-GB rate. With a
+// plan_id, the plan must exist and be active, size_gb comes from the
+// plan, and a size_gb the caller also sent must agree with it — this
+// never silently picks one over the other.
+func (h *Handler) resolveDatabasePlan(ctx context.Context, req createDatabaseRequest) (sizeGB int, planID *string, priceIDRMonth int64, errMsg string) {
+	if req.PlanID == nil {
+		if req.SizeGB == nil || *req.SizeGB < 1 || *req.SizeGB > 20 {
+			return 0, nil, 0, "size_gb must be between 1 and 20"
+		}
+		return *req.SizeGB, nil, int64(*req.SizeGB) * defaultPricePerGBIDRMonth, ""
+	}
+
+	plan, err := repository.GetPlanByID(ctx, h.DB, *req.PlanID)
+	if err != nil || !plan.Active {
+		return 0, nil, 0, "plan is not available"
+	}
+	if req.SizeGB != nil && *req.SizeGB != plan.SizeGB {
+		return 0, nil, 0, "size_gb does not match plan"
+	}
+	return plan.SizeGB, &plan.ID, plan.PriceIDRMonth, ""
+}
+
 // handleCreateDatabase provisions a new tenant database through
 // provisionDatabase, scoped to the signed-in user.
 func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
@@ -165,12 +203,18 @@ func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if msg := validateCreateDatabaseRequest(req.Name, req.SizeGB); msg != "" {
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	sizeGB, planID, priceIDRMonth, msg := h.resolveDatabasePlan(r.Context(), req)
+	if msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
 
-	created, password, err := h.provisionDatabase(r.Context(), user.ID, req.Name, req.SizeGB)
+	created, password, err := h.provisionDatabase(r.Context(), user.ID, req.Name, sizeGB, planID, priceIDRMonth)
 	if isNotFound(err) {
 		writeError(w, http.StatusServiceUnavailable, "no node available")
 		return

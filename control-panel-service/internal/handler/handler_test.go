@@ -544,6 +544,152 @@ func TestDeleteDatabaseQueuesJob(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
+func TestListPlansIsPublicAndReturnsSeedRows(t *testing.T) {
+	server, _, _ := newTestServer(t)
+
+	// No cookie jar at all: GET /api/plans must not require a session.
+	resp, err := http.Get(server.URL + "/api/plans")
+	if err != nil {
+		t.Fatalf("GET /api/plans: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/plans = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var plans []map[string]any
+	decode(t, resp, &plans)
+	if len(plans) != 4 {
+		t.Fatalf("GET /api/plans returned %d plans, want 4", len(plans))
+	}
+	if plans[0]["slug"] != "sandbox" {
+		t.Fatalf("GET /api/plans[0].slug = %v, want sandbox", plans[0]["slug"])
+	}
+	for _, key := range []string{"id", "slug", "name", "size_gb", "price_idr_month", "tagline", "badge", "sort_order"} {
+		if _, ok := plans[0][key]; !ok {
+			t.Fatalf("GET /api/plans row missing field %q: %v", key, plans[0])
+		}
+	}
+}
+
+func planIDBySlug(t *testing.T, db *sql.DB, slug string) string {
+	t.Helper()
+	var id string
+	if err := db.QueryRow(`SELECT id FROM plans WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("look up plan id for %s: %v", slug, err)
+	}
+	return id
+}
+
+func TestCreateDatabaseWithPlanStoresPlanAndSnapshotsPrice(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "plan-create@example.com")
+	insertNode(t, db, "node-plan-create")
+
+	planID := planIDBySlug(t, db, "production")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "plan_id": planID})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/databases with plan_id = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	decode(t, resp, &created)
+
+	var gotPlanID sql.NullString
+	var gotSizeGB int
+	var gotPrice sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT plan_id, size_gb, price_idr_month FROM databases WHERE id = $1
+	`, created.ID).Scan(&gotPlanID, &gotSizeGB, &gotPrice); err != nil {
+		t.Fatalf("look up created database: %v", err)
+	}
+	if !gotPlanID.Valid || gotPlanID.String != planID {
+		t.Fatalf("plan_id = %+v, want %s", gotPlanID, planID)
+	}
+	if gotSizeGB != 10 {
+		t.Fatalf("size_gb = %d, want 10 (the production plan's size)", gotSizeGB)
+	}
+	if !gotPrice.Valid || gotPrice.Int64 != 100000 {
+		t.Fatalf("price_idr_month = %+v, want 100000", gotPrice)
+	}
+}
+
+func TestCreateDatabaseRejectsUnknownPlan(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "plan-unknown@example.com")
+	insertNode(t, db, "node-plan-unknown")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{
+		"name": "demo", "plan_id": "00000000-0000-0000-0000-000000000000",
+	})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST /api/databases with an unknown plan_id = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestCreateDatabaseRejectsInactivePlan(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "plan-inactive@example.com")
+	insertNode(t, db, "node-plan-inactive")
+
+	planID := planIDBySlug(t, db, "heavy")
+	if _, err := db.Exec(`UPDATE plans SET active = false WHERE id = $1`, planID); err != nil {
+		t.Fatalf("deactivate plan: %v", err)
+	}
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "plan_id": planID})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST /api/databases with an inactive plan_id = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestCreateDatabaseRejectsSizeGBMismatchedWithPlan(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "plan-mismatch@example.com")
+	insertNode(t, db, "node-plan-mismatch")
+
+	planID := planIDBySlug(t, db, "sandbox")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{
+		"name": "demo", "plan_id": planID, "size_gb": 20,
+	})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST /api/databases with mismatched size_gb = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestCreateDatabaseWithoutPlanKeepsFreeFormSizeGB(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "plan-none@example.com")
+	insertNode(t, db, "node-plan-none")
+
+	resp := postJSON(t, client, server.URL+"/api/databases", map[string]any{"name": "demo", "size_gb": 7})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/databases with plain size_gb = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	decode(t, resp, &created)
+
+	var gotPlanID sql.NullString
+	var gotPrice sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT plan_id, price_idr_month FROM databases WHERE id = $1
+	`, created.ID).Scan(&gotPlanID, &gotPrice); err != nil {
+		t.Fatalf("look up created database: %v", err)
+	}
+	if gotPlanID.Valid {
+		t.Fatalf("plan_id = %+v, want NULL", gotPlanID)
+	}
+	if !gotPrice.Valid || gotPrice.Int64 != 70000 {
+		t.Fatalf("price_idr_month = %+v, want 70000 (7 * 10000)", gotPrice)
+	}
+}
+
 func TestListDatabasesHidesDeletedRows(t *testing.T) {
 	server, client, db := newTestServer(t)
 	signUp(t, server, client, "hides-deleted@example.com")
