@@ -17,6 +17,18 @@ var ErrPlanSlugTaken = errors.New("plan slug already exists")
 // block every customer from creating a database.
 var ErrLastActivePlan = errors.New("at least one active plan is required")
 
+// planActiveGuardLockKey is an arbitrary Postgres advisory lock key that
+// serializes every "deactivate a plan" transaction against every other
+// one. A FOR UPDATE on the row being deactivated is not enough on its
+// own: it never locks the *other* plan rows the "at least one active
+// plan" invariant depends on, so under READ COMMITTED two concurrent
+// requests deactivating the last two active plans could each see the
+// other as still active and both commit, leaving zero active plans.
+// Holding this lock for the transaction's duration forces the second
+// deactivation to wait for the first to commit, so its count query sees
+// the first one's effect.
+const planActiveGuardLockKey = 847002615
+
 const planColumns = `id, slug, name, size_gb, price_idr_month, tagline, badge, sort_order, active, created_at, updated_at`
 
 func scanPlan(row rowScanner) (entities.Plan, error) {
@@ -142,6 +154,16 @@ func UpdatePlan(ctx context.Context, db *sql.DB, id string, upd PlanUpdate) (ent
 		return entities.Plan{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	// Deactivating is the only change that can violate "at least one
+	// active plan": take the global guard lock before reading anything,
+	// so a concurrent deactivation is forced to wait behind this one
+	// instead of racing it.
+	if upd.Active != nil && !*upd.Active {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, planActiveGuardLockKey); err != nil {
+			return entities.Plan{}, err
+		}
+	}
 
 	row := tx.QueryRowContext(ctx, `
 		SELECT `+planColumns+`
