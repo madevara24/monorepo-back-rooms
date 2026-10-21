@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { errorMessage, postJSON } from '$lib/api';
 	import Field from '$lib/components/Field.svelte';
 	import Input from '$lib/components/Input.svelte';
@@ -21,7 +22,8 @@
 				error = await errorMessage(res);
 				return;
 			}
-			await goto('/dashboard');
+			const plan = $page.url.searchParams.get('plan');
+			await goto(plan ? `/dashboard?plan=${encodeURIComponent(plan)}` : '/dashboard');
 		} finally {
 			submitting = false;
 		}

@@ -12,6 +12,19 @@ export type Database = {
 	status: string;
 	public_host: string | null;
 	created_at: string;
+	plan_id: string | null;
+	price_idr_month: number | null;
+};
+
+export type Plan = {
+	id: string;
+	slug: string;
+	name: string;
+	size_gb: number;
+	price_idr_month: number;
+	tagline: string;
+	badge: string;
+	sort_order: number;
 };
 
 export type Invoice = {

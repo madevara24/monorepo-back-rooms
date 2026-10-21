@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { errorMessage, postJSON, type CreateDatabaseResult, type Database, type User } from '$lib/api';
+	import { page } from '$app/stores';
+	import {
+		errorMessage,
+		postJSON,
+		type CreateDatabaseResult,
+		type Database,
+		type Plan,
+		type User
+	} from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import StatusRail from '$lib/components/StatusRail.svelte';
@@ -22,7 +30,8 @@
 	let endpoint: string = $state('/api');
 
 	let createName: string = $state('');
-	let createSizeGB: number = $state(1);
+	let plans: Plan[] = $state([]);
+	let selectedPlanId: string = $state('');
 	let creating: boolean = $state(false);
 	let createError: string = $state('');
 
@@ -40,7 +49,7 @@
 
 	const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-	const monthlyPriceIDR = $derived(createSizeGB * 10000);
+	const selectedPlan = $derived(plans.find((p) => p.id === selectedPlanId) ?? null);
 	const createdDatabase = $derived(databases.find((d) => d.id === createdID) ?? null);
 	const connectionString = $derived(createdDatabase?.status === 'running' ? createdConnectionString : '');
 	const jdbcURL = $derived(createdDatabase?.status === 'running' ? createdJDBCURL : '');
@@ -75,6 +84,20 @@
 		}
 	}
 
+	async function loadPlans() {
+		const res = await fetch('/api/plans');
+		if (!res.ok) return;
+		plans = await res.json();
+		const wantedSlug = $page.url.searchParams.get('plan');
+		const wanted = wantedSlug ? plans.find((p) => p.slug === wantedSlug) : null;
+		selectedPlanId = (wanted ?? plans[0])?.id ?? '';
+	}
+
+	function packageLabel(db: Database): string {
+		const plan = plans.find((p) => p.id === db.plan_id);
+		return plan ? `${plan.name} · ${db.size_gb} GB` : `${db.size_gb} GB`;
+	}
+
 	onMount(async () => {
 		endpoint = `${location.host}/api`;
 		try {
@@ -84,6 +107,7 @@
 				return;
 			}
 			user = await meRes.json();
+			await loadPlans();
 			await loadDatabases();
 		} finally {
 			loading = false;
@@ -105,7 +129,7 @@
 		createError = '';
 		creating = true;
 		try {
-			const res = await postJSON('/api/databases', { name: createName, size_gb: createSizeGB });
+			const res = await postJSON('/api/databases', { name: createName, plan_id: selectedPlanId });
 			if (!res.ok) {
 				createError = await errorMessage(res);
 				return;
@@ -120,7 +144,7 @@
 			createdConnectionString = result.connection_string;
 			createdJDBCURL = result.jdbc_url;
 			createName = '';
-			createSizeGB = 1;
+			selectedPlanId = plans[0]?.id ?? '';
 			await loadDatabases();
 		} finally {
 			creating = false;
@@ -188,11 +212,28 @@
 				<Field label="Name" id="create-name">
 					<Input id="create-name" type="text" bind:value={createName} required />
 				</Field>
-				<Field label="Size (GB)" id="create-size">
-					<Input id="create-size" type="number" min={1} max={20} bind:value={createSizeGB} required />
-				</Field>
-				<p class="pb-3 text-sm text-muted">~ IDR {monthlyPriceIDR.toLocaleString('id-ID')} / month</p>
-				<Button type="submit" disabled={creating}>Create</Button>
+				{#if plans.length === 0}
+					<p class="text-muted">No packages available.</p>
+				{:else}
+					<Field label="Package" id="create-plan">
+						<select
+							id="create-plan"
+							bind:value={selectedPlanId}
+							required
+							class="h-11 w-full min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-text focus-visible:border-accent"
+						>
+							{#each plans as plan (plan.id)}
+								<option value={plan.id}>{plan.name} — {plan.size_gb} GB</option>
+							{/each}
+						</select>
+					</Field>
+					<p class="pb-3 text-sm text-muted">
+						{#if selectedPlan}
+							IDR {selectedPlan.price_idr_month.toLocaleString('id-ID')} / month
+						{/if}
+					</p>
+				{/if}
+				<Button type="submit" disabled={creating || plans.length === 0}>Create</Button>
 			</form>
 
 			{#if createError}
@@ -243,7 +284,7 @@
 					<thead>
 						<tr>
 							<th>Name</th>
-							<th>Size (GB)</th>
+							<th>Package</th>
 							<th>Status</th>
 							<th>Host</th>
 							<th>Created</th>
@@ -254,7 +295,7 @@
 						{#each databases as db (db.id)}
 							<tr>
 								<td>{db.name}</td>
-								<td>{db.size_gb}</td>
+								<td>{packageLabel(db)}</td>
 								<td><Status state={db.status} /></td>
 								<td class="font-mono text-xs">{db.public_host ? `${db.public_host}:5432` : '-'}</td>
 								<td>{new Date(db.created_at).toLocaleString()}</td>

@@ -1,24 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import StatusRail from '$lib/components/StatusRail.svelte';
-	import Panel from '$lib/components/Panel.svelte';
+	import type { Plan } from '$lib/api';
 	import Button from '$lib/components/Button.svelte';
-	import Status from '$lib/components/Status.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
-	let endpoint: string = $state('/api');
 	let signedIn: boolean = $state(false);
 	let isAdmin: boolean = $state(false);
-	let databaseCount: number | null = $state(null);
-	let provisionedGB: number | null = $state(null);
+	let plans: Plan[] = $state([]);
+	let plansState: 'loading' | 'ready' | 'error' = $state('loading');
 
-	const lifecycle = [
-		{ step: '1', text: 'A create request writes a database row and a job.' },
-		{ step: '2', text: 'The worker calls the data-plane agent with the wanted state.' },
-		{ step: '3', text: 'The agent creates a sized volume, a limited container, a password, and a TLS certificate.' },
-		{ step: '4', text: 'The agent reports running; the connection string is shown once.' },
-		{ step: '5', text: 'Hourly size is recorded; a daily snapshot goes to S3; delete takes a final snapshot.' }
+	const cardBullets = [
+		'One container, one tenant',
+		'TLS on a public hostname',
+		'Connection string and JDBC URL',
+		'Fixed size, enforced by the volume'
 	];
 
 	async function checkHealth() {
@@ -31,21 +27,32 @@
 		}
 	}
 
+	async function loadPlans() {
+		plansState = 'loading';
+		try {
+			const res = await fetch('/api/plans');
+			if (!res.ok) throw new Error('could not load plans');
+			plans = await res.json();
+			plansState = 'ready';
+		} catch {
+			plansState = 'error';
+		}
+	}
+
+	function buyHref(slug: string) {
+		const path = signedIn ? '/dashboard' : '/signup';
+		return `${path}?plan=${encodeURIComponent(slug)}`;
+	}
+
 	onMount(async () => {
-		endpoint = `${location.host}/api`;
 		await checkHealth();
+		await loadPlans();
 		try {
 			const meRes = await fetch('/api/me');
 			signedIn = meRes.ok;
 			if (meRes.ok) {
 				const me = await meRes.json();
 				isAdmin = me.is_admin === true;
-				const dbRes = await fetch('/api/databases');
-				if (dbRes.ok) {
-					const databases: { size_gb: number }[] = await dbRes.json();
-					databaseCount = databases.length;
-					provisionedGB = databases.reduce((sum, d) => sum + d.size_gb, 0);
-				}
 			}
 		} catch {
 			signedIn = false;
@@ -53,19 +60,21 @@
 	});
 </script>
 
-<div class="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-4 py-6">
+<svelte:head>
+	<title>MBR — Postgres, by the gigabyte.</title>
+</svelte:head>
+
+<div class="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 px-4 py-6">
 	<header class="flex items-center justify-between">
 		<span class="text-lg font-semibold text-text">MBR</span>
 		<ThemeToggle />
 	</header>
 
-	<StatusRail {apiState} {endpoint} {databaseCount} {provisionedGB} />
-
 	<section class="flex flex-col gap-3">
-		<h1 class="text-3xl font-semibold text-text">A self-serve Postgres marketplace.</h1>
+		<h1 class="text-3xl font-semibold text-text">Postgres, by the gigabyte.</h1>
 		<p class="text-muted">
-			Pick a name and a size in GB. Get a running Postgres instance and a connection string. Flat
-			price: IDR 10,000 per GB per month, billed hourly for proration.
+			Pick a package and get a running Postgres with TLS, a public hostname, and a connection
+			string.
 		</p>
 		<nav class="flex flex-wrap gap-3">
 			{#if signedIn}
@@ -74,62 +83,68 @@
 					<a href="/admin"><Button variant="secondary">Admin</Button></a>
 				{/if}
 			{:else}
-				<a href="/signup"><Button>Sign up</Button></a>
+				<a href="/signup"><Button>Create an account</Button></a>
 				<a href="/login"><Button variant="secondary">Log in</Button></a>
 			{/if}
 		</nav>
 	</section>
 
-	<Panel title="Sample database">
-		<p class="text-xs font-medium tracking-wide text-muted uppercase">Sample — not live data</p>
-		<div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-			<div>
-				<p class="text-muted">Name</p>
-				<p class="font-mono">orders-db</p>
-			</div>
-			<div>
-				<p class="text-muted">Size</p>
-				<p class="font-mono">5 GB</p>
-			</div>
-			<div>
-				<p class="text-muted">Status</p>
-				<Status state="running" />
-			</div>
-			<div>
-				<p class="text-muted">Host</p>
-				<p class="font-mono break-all">orders-db.db.mbr.madevara.com:5432</p>
-			</div>
+	<section class="flex flex-col gap-4">
+		<div>
+			<h2 class="text-xl font-semibold text-text">Packages</h2>
+			<p class="text-muted">One container per database. Fixed size, enforced by the volume.</p>
 		</div>
-	</Panel>
 
-	<Panel title="Price">
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="border-b border-line text-muted">
-					<th class="py-1 font-medium">Size</th>
-					<th class="py-1 font-medium">Monthly</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each [1, 5, 10, 20] as gb (gb)}
-					<tr class="border-b border-line last:border-none">
-						<td class="py-1">{gb} GB</td>
-						<td class="py-1 font-mono">IDR {(gb * 10000).toLocaleString('id-ID')}</td>
-					</tr>
+		{#if plansState === 'loading'}
+			<p class="text-muted">Loading packages...</p>
+		{:else if plansState === 'error' || plans.length === 0}
+			<p class="text-muted">
+				Packages are unavailable right now. <a href="/" data-sveltekit-reload class="underline"
+					>Reload</a
+				>
+			</p>
+		{:else}
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+				{#each plans as plan (plan.id)}
+					<div class="flex flex-col gap-3 rounded-md border border-line bg-surface p-4">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="text-lg font-semibold text-text">{plan.name}</h3>
+							{#if plan.badge}
+								<span
+									class="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-on-accent"
+									>{plan.badge}</span
+								>
+							{/if}
+						</div>
+						<p class="flex items-baseline gap-1">
+							<span class="font-mono text-lg text-text"
+								>IDR {plan.price_idr_month.toLocaleString('id-ID')}</span
+							>
+							<span class="text-sm text-muted">/ month</span>
+						</p>
+						<p class="text-sm text-muted">{plan.size_gb} GB</p>
+						<p class="text-sm text-text">{plan.tagline}</p>
+						<ul class="flex flex-col gap-1 text-sm text-muted">
+							{#each cardBullets as bullet (bullet)}
+								<li>{bullet}</li>
+							{/each}
+						</ul>
+						<a href={buyHref(plan.slug)}>
+							<Button class="w-full">Get {plan.name}</Button>
+						</a>
+					</div>
 				{/each}
-			</tbody>
-		</table>
-		<p class="text-xs text-muted">IDR 10,000 / GB / month, billed hourly for proration.</p>
-	</Panel>
+			</div>
+		{/if}
 
-	<Panel title="One database's life">
-		<ol class="flex flex-col gap-2 text-sm">
-			{#each lifecycle as item (item.step)}
-				<li class="flex gap-3">
-					<span class="font-mono text-muted">{item.step}</span>
-					<span class="text-text">{item.text}</span>
-				</li>
-			{/each}
-		</ol>
-	</Panel>
+		<p class="text-xs text-muted">
+			Monthly prices per package. Sizes run 1 to 20 GB. Payment is mocked in this build — no
+			card is charged.
+		</p>
+	</section>
+
+	<footer class="mt-auto flex flex-wrap items-center gap-3 text-xs text-muted">
+		<span>API {apiState === 'checking' ? 'checking…' : apiState}</span>
+		<a href="/about" class="underline">About</a>
+	</footer>
 </div>
