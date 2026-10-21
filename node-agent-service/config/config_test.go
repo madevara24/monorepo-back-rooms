@@ -1,10 +1,12 @@
 package config
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"math/big"
 	"os"
@@ -88,6 +90,53 @@ func TestValidateTenantTLSFilesRejectsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	if err := validateTenantTLSFiles(filepath.Join(dir, "missing.crt"), filepath.Join(dir, "missing.key")); err == nil {
 		t.Fatal("validateTenantTLSFiles() = nil, want error for missing files")
+	}
+}
+
+// setRequiredTLSEnv sets every env var Load requires besides the
+// release public key, so tests can isolate AGENT_RELEASE_PUBLIC_KEY_B64
+// as the only thing under test.
+func setRequiredTLSEnv(t *testing.T) {
+	t.Helper()
+	certPath, keyPath := writeSelfSignedCert(t, t.TempDir())
+	t.Setenv("AGENT_TLS_CERT", "cert")
+	t.Setenv("AGENT_TLS_KEY", "key")
+	t.Setenv("AGENT_CLIENT_CA", "ca")
+	t.Setenv("AGENT_TENANT_TLS_CERT", certPath)
+	t.Setenv("AGENT_TENANT_TLS_KEY", keyPath)
+}
+
+func TestLoadAcceptsNoReleasePublicKey(t *testing.T) {
+	setRequiredTLSEnv(t)
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() with no release public key = %v, want nil", err)
+	}
+}
+
+func TestLoadAcceptsAWellFormedReleasePublicKey(t *testing.T) {
+	setRequiredTLSEnv(t)
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	t.Setenv("AGENT_RELEASE_PUBLIC_KEY_B64", base64.StdEncoding.EncodeToString(pub))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with a well-formed release public key = %v, want nil", err)
+	}
+	if cfg.ReleasePublicKeyB64 == "" {
+		t.Fatal("Load() did not carry through ReleasePublicKeyB64")
+	}
+}
+
+func TestLoadRejectsAMalformedReleasePublicKey(t *testing.T) {
+	setRequiredTLSEnv(t)
+	t.Setenv("AGENT_RELEASE_PUBLIC_KEY_B64", "not-base64-!!!")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() with a malformed release public key = nil, want error")
 	}
 }
 

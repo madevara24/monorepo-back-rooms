@@ -57,12 +57,13 @@ type capacityResponse struct {
 }
 
 type nodeResponse struct {
-	NodeID     string             `json:"node_id"`
-	Host       string             `json:"host"`
-	Version    string             `json:"version"`
-	Capacity   capacityResponse   `json:"capacity"`
-	UsedPorts  []int              `json:"used_ports"`
-	Containers []databaseResponse `json:"containers"`
+	NodeID                     string             `json:"node_id"`
+	Host                       string             `json:"host"`
+	Version                    string             `json:"version"`
+	ReleasePublicKeyConfigured bool               `json:"release_public_key_configured"`
+	Capacity                   capacityResponse   `json:"capacity"`
+	UsedPorts                  []int              `json:"used_ports"`
+	Containers                 []databaseResponse `json:"containers"`
 }
 
 func (h *Handler) handleGetNode(w http.ResponseWriter, r *http.Request) {
@@ -78,9 +79,10 @@ func (h *Handler) handleGetNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, nodeResponse{
-		NodeID:  status.NodeID,
-		Host:    status.Host,
-		Version: status.Version,
+		NodeID:                     status.NodeID,
+		Host:                       status.Host,
+		Version:                    status.Version,
+		ReleasePublicKeyConfigured: status.ReleasePublicKeyConfigured,
 		Capacity: capacityResponse{
 			PortRangeMin: status.PortRangeMin,
 			PortRangeMax: status.PortRangeMax,

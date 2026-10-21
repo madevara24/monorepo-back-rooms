@@ -109,6 +109,21 @@ type DatabaseMetric struct {
 	CollectedAt                  time.Time
 }
 
+// Release is one signed mbr-node build CI published: a monotonically
+// increasing Version, the Checksum and Signature from its manifest, and
+// where to download the binary. The control plane only ever stores what
+// CI's agent-release.Verify already accepted; it never receives the
+// binary itself.
+type Release struct {
+	ID          string
+	Version     int
+	CommitSHA   string
+	Checksum    string
+	Signature   string
+	ArtifactURL string
+	CreatedAt   time.Time
+}
+
 // Invoice is a billing period for a user. Payment only flips the status;
 // no money moves.
 type Invoice struct {

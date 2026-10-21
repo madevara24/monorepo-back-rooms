@@ -60,15 +60,16 @@ func (n *Node) ListDatabases(ctx context.Context) ([]entities.Container, error) 
 // Status is the agent's current capacity and the tenant containers it
 // sees, the data behind GET /v1/node.
 type Status struct {
-	NodeID       string
-	Host         string
-	Version      string
-	PortRangeMin int
-	PortRangeMax int
-	PortsTotal   int
-	PortsUsed    int
-	UsedPorts    []int
-	Containers   []entities.Container
+	NodeID                     string
+	Host                       string
+	Version                    string
+	ReleasePublicKeyConfigured bool
+	PortRangeMin               int
+	PortRangeMax               int
+	PortsTotal                 int
+	PortsUsed                  int
+	UsedPorts                  []int
+	Containers                 []entities.Container
 }
 
 // GetStatus reports the agent's capacity and the tenant containers it
@@ -86,15 +87,16 @@ func (n *Node) GetStatus(ctx context.Context) (Status, error) {
 	ports := portsInRange(usedPorts, n.PortMin, n.PortMax)
 
 	return Status{
-		NodeID:       n.NodeID,
-		Host:         n.HostAddress,
-		Version:      n.Version,
-		PortRangeMin: n.PortMin,
-		PortRangeMax: n.PortMax,
-		PortsTotal:   n.PortMax - n.PortMin + 1,
-		PortsUsed:    len(ports),
-		UsedPorts:    ports,
-		Containers:   containers,
+		NodeID:                     n.NodeID,
+		Host:                       n.HostAddress,
+		Version:                    n.Version,
+		ReleasePublicKeyConfigured: n.ReleasePublicKeyConfigured,
+		PortRangeMin:               n.PortMin,
+		PortRangeMax:               n.PortMax,
+		PortsTotal:                 n.PortMax - n.PortMin + 1,
+		PortsUsed:                  len(ports),
+		UsedPorts:                  ports,
+		Containers:                 containers,
 	}, nil
 }
 

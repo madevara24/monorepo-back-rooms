@@ -28,7 +28,7 @@ Two planes, never on the same host.
 | Data | `node-agent-service` (`cmd/node`, `mbr-node`), Docker, one Postgres container per tenant. Separate VPS. |
 | Storage | S3 bucket for snapshots, written by the agent. |
 
-Each deployable stack is its own top-level folder and Go module (`control-panel-service/go.mod`, `node-agent-service/go.mod`, `connection-router/go.mod`, tied together by the root `go.work`), with a layer-first interior: `entities` (models), `repository` (pgx/Docker), `usecase` (business logic), `handler` (net/http), and a `container.go` composition root.
+Each deployable stack is its own top-level folder and Go module (`control-panel-service/go.mod`, `node-agent-service/go.mod`, `connection-router/go.mod`, tied together by the root `go.work`), with a layer-first interior: `entities` (models), `repository` (pgx/Docker), `usecase` (business logic), `handler` (net/http), and a `container.go` composition root. `agent-release` is a fourth `go.work` module, but it is not a deployable stack: it is the shared signed-release manifest package (version/checksum/ed25519 signature) that CI's signing step and `control-panel-service`'s release catalog both import, so the signing and verifying sides can never drift — see `DEPLOY.md`'s `node-agent-service` row for the release flow.
 
 The control plane is the source of truth for users, databases, sizes, status, snapshots, and invoices. The data plane holds the bytes. `mbr-node` is the only process that talks to Docker; the API calls it over mTLS.
 
@@ -55,7 +55,7 @@ Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host po
 
 ```bash
 make dev     # control Postgres + api + node + web
-make test    # go vet + go test (all three Go modules) + svelte-check
+make test    # go vet + go test (all four Go modules) + svelte-check
 make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node ./connection-router/cmd/router + npm run build in control-web/
 ```
 

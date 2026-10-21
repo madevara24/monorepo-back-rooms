@@ -17,6 +17,7 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/madevara24/monorepo-back-rooms/agent-release v0.0.0-00010101000000-000000000000
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/morikuni/aec v1.1.0 // indirect
@@ -34,3 +35,5 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 )
+
+replace github.com/madevara24/monorepo-back-rooms/agent-release => ../agent-release

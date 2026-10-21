@@ -39,6 +39,7 @@ func TestAdminRoutesRejectNonAdmin(t *testing.T) {
 		"/api/admin/nodes",
 		"/api/admin/jobs",
 		"/api/admin/database-metrics",
+		"/api/admin/releases",
 	} {
 		resp, err := client.Get(server.URL + path)
 		if err != nil {

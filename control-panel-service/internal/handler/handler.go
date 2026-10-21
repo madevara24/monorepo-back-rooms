@@ -7,6 +7,7 @@
 package handler
 
 import (
+	"crypto/ed25519"
 	"database/sql"
 	"net/http"
 
@@ -27,6 +28,10 @@ type Handler struct {
 	// Cipher encrypts tenant database passwords at rest. It is required
 	// by POST /api/databases.
 	Cipher *credentials.Cipher
+	// ReleasePublicKey verifies a release manifest's signature on
+	// POST /api/releases. It is nil until MBR_RELEASE_PUBLIC_KEY_B64 is
+	// configured, in which case that endpoint refuses every release.
+	ReleasePublicKey ed25519.PublicKey
 }
 
 // NewMux builds the complete control-plane router.
@@ -49,6 +54,8 @@ func NewMux(h *Handler) *http.ServeMux {
 
 	mux.HandleFunc("POST /api/agent/heartbeat", h.handleAgentHeartbeat)
 
+	mux.HandleFunc("POST /api/releases", h.handlePublishRelease)
+
 	mux.HandleFunc("GET /api/billing/invoices", h.requireAuth(h.handleListInvoices))
 	mux.HandleFunc("POST /api/billing/invoices/{id}/pay", h.requireAuth(h.handlePayInvoice))
 
@@ -61,6 +68,7 @@ func NewMux(h *Handler) *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/nodes", h.requireAdmin(h.handleAdminNodes))
 	mux.HandleFunc("GET /api/admin/jobs", h.requireAdmin(h.handleAdminJobs))
 	mux.HandleFunc("GET /api/admin/database-metrics", h.requireAdmin(h.handleAdminDatabaseMetrics))
+	mux.HandleFunc("GET /api/admin/releases", h.requireAdmin(h.handleAdminReleases))
 
 	return mux
 }

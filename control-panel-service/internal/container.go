@@ -5,12 +5,14 @@
 package container
 
 import (
+	"crypto/ed25519"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"net/http"
 	"time"
 
+	release "github.com/madevara24/monorepo-back-rooms/agent-release"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/config"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/handler"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/integration"
@@ -67,6 +69,12 @@ func New(cfg config.Config, commit string) (*Container, error) {
 		return nil, fmt.Errorf("configure agent client: %w", err)
 	}
 
+	releasePublicKey, err := releasePublicKey(cfg)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("configure release public key: %w", err)
+	}
+
 	reconciler := &usecase.Reconciler{DB: db, Path: cfg.RoutesPath}
 	metricsRetention := &usecase.MetricsRetention{DB: db, RetentionDays: metricsRetentionDays}
 
@@ -77,11 +85,12 @@ func New(cfg config.Config, commit string) (*Container, error) {
 	}
 
 	h := &handler.Handler{
-		DB:           db,
-		Auth:         &usecase.Auth{DB: db},
-		CookieSecure: cfg.CookieSecure,
-		Commit:       commit,
-		Cipher:       cipher,
+		DB:               db,
+		Auth:             &usecase.Auth{DB: db},
+		CookieSecure:     cfg.CookieSecure,
+		Commit:           commit,
+		Cipher:           cipher,
+		ReleasePublicKey: releasePublicKey,
 	}
 
 	return &Container{
@@ -109,6 +118,18 @@ func newAgentClient(cfg config.Config) (*integration.Client, error) {
 		return nil, err
 	}
 	return integration.New(caPEM, certPEM, keyPEM)
+}
+
+// releasePublicKey parses the control plane's configured release
+// signing public key, if any. An unset MBR_RELEASE_PUBLIC_KEY_B64 is not
+// an error: it just leaves POST /api/releases refusing every release
+// until the key is configured, which is expected before the first
+// signing key exists.
+func releasePublicKey(cfg config.Config) (ed25519.PublicKey, error) {
+	if cfg.ReleasePublicKeyB64 == "" {
+		return nil, nil
+	}
+	return release.ParsePublicKeyB64(cfg.ReleasePublicKeyB64)
 }
 
 func decodeBase64(name, v string) ([]byte, error) {

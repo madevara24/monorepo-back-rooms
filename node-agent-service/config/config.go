@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	release "github.com/madevara24/monorepo-back-rooms/agent-release"
 )
 
 // Config holds every environment-derived setting cmd/node needs to
@@ -34,6 +36,12 @@ type Config struct {
 
 	ControlURL   string
 	ControlToken string
+
+	// ReleasePublicKeyB64 is the base64 ed25519 public key that verifies
+	// a signed mbr-node release manifest. It is optional until MBR-23's
+	// updater lands; if set, it must already be a well-formed key so a
+	// typo is caught at startup rather than at the first update attempt.
+	ReleasePublicKeyB64 string
 }
 
 // Load reads Config from the environment and validates its TLS
@@ -57,20 +65,21 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Addr:          getEnv("AGENT_ADDR", ":9443"),
-		DataDir:       getEnv("AGENT_DATA_DIR", "/var/lib/mbr-node"),
-		NodeID:        nodeID,
-		HostAddress:   os.Getenv("AGENT_HOST_ADDRESS"),
-		Image:         getEnv("AGENT_IMAGE", "postgres:17"),
-		PortMin:       portMin,
-		PortMax:       portMax,
-		TLSCert:       os.Getenv("AGENT_TLS_CERT"),
-		TLSKey:        os.Getenv("AGENT_TLS_KEY"),
-		ClientCA:      os.Getenv("AGENT_CLIENT_CA"),
-		TenantTLSCert: os.Getenv("AGENT_TENANT_TLS_CERT"),
-		TenantTLSKey:  os.Getenv("AGENT_TENANT_TLS_KEY"),
-		ControlURL:    os.Getenv("CONTROL_URL"),
-		ControlToken:  os.Getenv("AGENT_CONTROL_TOKEN"),
+		Addr:                getEnv("AGENT_ADDR", ":9443"),
+		DataDir:             getEnv("AGENT_DATA_DIR", "/var/lib/mbr-node"),
+		NodeID:              nodeID,
+		HostAddress:         os.Getenv("AGENT_HOST_ADDRESS"),
+		Image:               getEnv("AGENT_IMAGE", "postgres:17"),
+		PortMin:             portMin,
+		PortMax:             portMax,
+		TLSCert:             os.Getenv("AGENT_TLS_CERT"),
+		TLSKey:              os.Getenv("AGENT_TLS_KEY"),
+		ClientCA:            os.Getenv("AGENT_CLIENT_CA"),
+		TenantTLSCert:       os.Getenv("AGENT_TENANT_TLS_CERT"),
+		TenantTLSKey:        os.Getenv("AGENT_TENANT_TLS_KEY"),
+		ControlURL:          os.Getenv("CONTROL_URL"),
+		ControlToken:        os.Getenv("AGENT_CONTROL_TOKEN"),
+		ReleasePublicKeyB64: os.Getenv("AGENT_RELEASE_PUBLIC_KEY_B64"),
 	}
 
 	if err := requireTLSEnv(cfg.TLSCert, cfg.TLSKey, cfg.ClientCA, cfg.TenantTLSCert, cfg.TenantTLSKey); err != nil {
@@ -78,6 +87,11 @@ func Load() (Config, error) {
 	}
 	if err := validateTenantTLSFiles(cfg.TenantTLSCert, cfg.TenantTLSKey); err != nil {
 		return Config{}, err
+	}
+	if cfg.ReleasePublicKeyB64 != "" {
+		if _, err := release.ParsePublicKeyB64(cfg.ReleasePublicKeyB64); err != nil {
+			return Config{}, fmt.Errorf("invalid AGENT_RELEASE_PUBLIC_KEY_B64: %w", err)
+		}
 	}
 
 	return cfg, nil

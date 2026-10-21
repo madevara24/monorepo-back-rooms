@@ -48,6 +48,24 @@ jobs:
           working-directory: control-panel-service
       - run: go test ./...
 
+  agent-release:
+    name: Go (agent-release)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent-release/go.mod
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          working-directory: agent-release
+      - run: go test ./...
+
   node-agent-service:
     name: Go (node-agent-service)
     runs-on: ubuntu-latest

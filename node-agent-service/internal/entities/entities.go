@@ -13,6 +13,10 @@ type Config struct {
 	PortMax     int
 	// Version is the build's commit SHA, reported by GET /v1/node.
 	Version string
+	// ReleasePublicKeyConfigured reports whether AGENT_RELEASE_PUBLIC_KEY_B64
+	// was set, so GET /v1/node lets ops confirm a node is ready for
+	// MBR-23's updater before it ships.
+	ReleasePublicKeyConfigured bool
 	// TenantTLSCertPath and TenantTLSKeyPath are host paths to the
 	// wildcard cert and key that every tenant container mounts
 	// read-only so Postgres can require TLS.

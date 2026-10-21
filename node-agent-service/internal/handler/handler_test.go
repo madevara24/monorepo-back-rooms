@@ -232,6 +232,31 @@ func TestGetNode(t *testing.T) {
 	}
 }
 
+func TestGetNodeReportsReleasePublicKeyConfigured(t *testing.T) {
+	n := &usecase.Node{
+		Config: entities.Config{
+			NodeID: "node-release", HostAddress: "10.0.0.9", PortMin: 21000, PortMax: 21000,
+			ReleasePublicKeyConfigured: true,
+		},
+		Docker:  newFakeDocker(),
+		Volumes: newFakeVolumes(),
+	}
+	server := httptest.NewServer(handler.NewMux(n))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/v1/node")
+	if err != nil {
+		t.Fatalf("GET /v1/node: %v", err)
+	}
+	var out struct {
+		ReleasePublicKeyConfigured bool `json:"release_public_key_configured"`
+	}
+	decode(t, resp, &out)
+	if !out.ReleasePublicKeyConfigured {
+		t.Fatal("GET /v1/node release_public_key_configured = false, want true")
+	}
+}
+
 func TestCreateDatabaseIsIdempotent(t *testing.T) {
 	docker := newFakeDocker()
 	volumes := newFakeVolumes()

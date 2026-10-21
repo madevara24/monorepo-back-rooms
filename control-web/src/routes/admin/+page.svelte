@@ -10,6 +10,7 @@
 		type AdminJob,
 		type AdminNode,
 		type AdminOverview,
+		type AdminRelease,
 		type AdminUser,
 		type CreateDatabaseResult
 	} from '$lib/api';
@@ -37,6 +38,7 @@
 	let databases: AdminDatabase[] = $state([]);
 	let nodes: AdminNode[] = $state([]);
 	let jobs: AdminJob[] = $state([]);
+	let releases: AdminRelease[] = $state([]);
 	let databaseMetrics: AdminDatabaseMetric[] = $state([]);
 	let metricsError: string = $state('');
 
@@ -83,13 +85,14 @@
 				return;
 			}
 
-			[overview, users, databases, nodes, jobs, databaseMetrics] = await Promise.all([
+			[overview, users, databases, nodes, jobs, databaseMetrics, releases] = await Promise.all([
 				loadJSON<AdminOverview>('/api/admin/overview'),
 				loadJSON<AdminUser[]>('/api/admin/users'),
 				loadJSON<AdminDatabase[]>('/api/admin/databases'),
 				loadJSON<AdminNode[]>('/api/admin/nodes'),
 				loadJSON<AdminJob[]>('/api/admin/jobs'),
-				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics')
+				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics'),
+				loadJSON<AdminRelease[]>('/api/admin/releases')
 			]);
 			if (users.length > 0) {
 				createUserId = users[0].id;
@@ -273,6 +276,39 @@
 										</ul>
 									{/if}
 								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</Table>
+			{/if}
+		</Panel>
+
+		<Panel title="Releases">
+			{#if releases.length === 0}
+				<EmptyState message="No signed mbr-node releases yet." />
+			{:else}
+				<Table>
+					<thead>
+						<tr>
+							<th>Version</th>
+							<th>Commit</th>
+							<th>Checksum</th>
+							<th>Artifact</th>
+							<th>Published</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each releases as rel (rel.id)}
+							<tr>
+								<td class="font-mono text-xs">{rel.version}</td>
+								<td class="font-mono text-xs">{rel.commit_sha.slice(0, 12)}</td>
+								<td class="font-mono text-xs" title={rel.checksum}>{rel.checksum.slice(0, 12)}&hellip;</td>
+								<td>
+									<a class="underline" href={rel.artifact_url} target="_blank" rel="noopener noreferrer"
+										>download</a
+									>
+								</td>
+								<td>{new Date(rel.created_at).toLocaleString()}</td>
 							</tr>
 						{/each}
 					</tbody>

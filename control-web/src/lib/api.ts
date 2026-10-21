@@ -85,6 +85,15 @@ export type AdminDatabaseMetric = {
 	collected_at: string;
 };
 
+export type AdminRelease = {
+	id: string;
+	version: number;
+	commit_sha: string;
+	checksum: string;
+	artifact_url: string;
+	created_at: string;
+};
+
 export type AdminJob = {
 	id: string;
 	kind: string;

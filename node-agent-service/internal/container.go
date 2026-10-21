@@ -33,14 +33,15 @@ func New(cfg config.Config, commit string) (*Container, error) {
 
 	n := &usecase.Node{
 		Config: entities.Config{
-			NodeID:            cfg.NodeID,
-			HostAddress:       cfg.HostAddress,
-			Image:             cfg.Image,
-			PortMin:           cfg.PortMin,
-			PortMax:           cfg.PortMax,
-			Version:           commit,
-			TenantTLSCertPath: cfg.TenantTLSCert,
-			TenantTLSKeyPath:  cfg.TenantTLSKey,
+			NodeID:                     cfg.NodeID,
+			HostAddress:                cfg.HostAddress,
+			Image:                      cfg.Image,
+			PortMin:                    cfg.PortMin,
+			PortMax:                    cfg.PortMax,
+			Version:                    commit,
+			TenantTLSCertPath:          cfg.TenantTLSCert,
+			TenantTLSKeyPath:           cfg.TenantTLSKey,
+			ReleasePublicKeyConfigured: cfg.ReleasePublicKeyB64 != "",
 		},
 		Docker:  repository.NewDockerClient(cli),
 		Volumes: repository.NewLoopVolumeManager(cfg.DataDir),
