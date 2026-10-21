@@ -43,15 +43,13 @@ func AnyAvailableNode(ctx context.Context, db *sql.DB) (entities.Node, error) {
 	return scanNode(row)
 }
 
-// UpdateNodeHeartbeat records a node's latest capacity report and the time
-// it checked in. The agent's heartbeat body carries no version field (see
-// node-agent-service/internal/usecase/heartbeat.go), so version is left
-// untouched here.
-func UpdateNodeHeartbeat(ctx context.Context, db *sql.DB, nodeID string, capacity []byte) error {
+// UpdateNodeHeartbeat records a node's latest capacity report, build
+// version, and the time it checked in.
+func UpdateNodeHeartbeat(ctx context.Context, db *sql.DB, nodeID, version string, capacity []byte) error {
 	_, err := db.ExecContext(ctx, `
-		UPDATE nodes SET capacity = $2, last_heartbeat = now()
+		UPDATE nodes SET capacity = $2, version = $3, last_heartbeat = now()
 		WHERE id = $1
-	`, nodeID, capacity)
+	`, nodeID, capacity, version)
 	return err
 }
 

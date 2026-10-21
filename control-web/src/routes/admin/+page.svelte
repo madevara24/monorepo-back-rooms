@@ -115,6 +115,23 @@
 		if (level === 'warning') return 'rounded px-2 py-1 text-xs font-semibold text-[var(--warning)]';
 		return 'rounded px-2 py-1 text-xs font-semibold text-[var(--accent)]';
 	}
+	// 2 minutes mirrors the control plane's own fresh/stale window
+	// (AnyAvailableNode and the overview's nodes_fresh/nodes_stale split).
+	const STALE_HEARTBEAT_AGE_SECONDS = 120;
+	function formatHeartbeatAge(ageSeconds: number | null): string {
+		if (ageSeconds === null) return 'never';
+		if (ageSeconds < 60) return `${ageSeconds}s ago`;
+		const minutes = Math.floor(ageSeconds / 60);
+		if (minutes < 60) return `${minutes}m ago`;
+		const hours = Math.floor(minutes / 60);
+		return `${hours}h ago`;
+	}
+	function heartbeatBadgeClass(ageSeconds: number | null): string {
+		if (ageSeconds === null || ageSeconds > STALE_HEARTBEAT_AGE_SECONDS) {
+			return 'rounded px-2 py-1 text-xs font-semibold text-[var(--error)]';
+		}
+		return 'rounded px-2 py-1 text-xs font-semibold text-[var(--accent)]';
+	}
 	function formatCounts(counts: Record<string, number>): string {
 		const entries = Object.entries(counts);
 		if (entries.length === 0) return 'none';
@@ -232,8 +249,15 @@
 						{#each nodes as node (node.id)}
 							<tr>
 								<td class="font-mono text-xs">{node.id}</td>
-								<td class="font-mono text-xs">{node.version || '-'}</td>
-								<td>{node.last_heartbeat ? new Date(node.last_heartbeat).toLocaleString() : 'never'}</td>
+								<td class="font-mono text-xs">{node.version || 'unknown'}</td>
+								<td>
+									<span
+										class={heartbeatBadgeClass(node.last_heartbeat_age_seconds)}
+										title={node.last_heartbeat ? new Date(node.last_heartbeat).toLocaleString() : ''}
+									>
+										{formatHeartbeatAge(node.last_heartbeat_age_seconds)}
+									</span>
+								</td>
 								<td class="font-mono text-xs">{JSON.stringify(node.capacity)}</td>
 								<td>
 									{#if node.containers.length === 0}

@@ -254,6 +254,67 @@ func TestAdminNodesIncludesContainers(t *testing.T) {
 	}
 }
 
+// TestAdminNodesReportsVersionAndHeartbeatAge covers the admin nodes
+// response surfacing both the agent's last-reported version and a
+// computed heartbeat age, alongside the explicit empty state (no
+// heartbeat yet, no version reported) for a node that has never checked
+// in.
+func TestAdminNodesReportsVersionAndHeartbeatAge(t *testing.T) {
+	server, client, db := newTestServer(t)
+	signUp(t, server, client, "admin-nodes-version@example.com")
+	promoteToAdmin(t, db, "admin-nodes-version@example.com")
+
+	if _, err := db.Exec(`
+		INSERT INTO nodes (id, name, address, token_hash, version, last_heartbeat)
+		VALUES ('versioned-node', 'versioned-node', 'https://agent.invalid:9443', 'versioned-hash', 'abc1234', now() - interval '30 seconds')
+	`); err != nil {
+		t.Fatalf("insert versioned node fixture: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO nodes (id, name, address, token_hash) VALUES ('new-node', 'new-node', 'https://agent.invalid:9443', 'new-hash')
+	`); err != nil {
+		t.Fatalf("insert never-heartbeated node fixture: %v", err)
+	}
+
+	resp, err := client.Get(server.URL + "/api/admin/nodes")
+	if err != nil {
+		t.Fatalf("GET /api/admin/nodes: %v", err)
+	}
+	var rows []map[string]any
+	decode(t, resp, &rows)
+
+	byID := map[string]map[string]any{}
+	for _, row := range rows {
+		byID[row["id"].(string)] = row
+	}
+
+	versioned, ok := byID["versioned-node"]
+	if !ok {
+		t.Fatalf("admin nodes response missing versioned-node: %v", rows)
+	}
+	if versioned["version"] != "abc1234" {
+		t.Fatalf("versioned-node version = %v, want abc1234", versioned["version"])
+	}
+	age, ok := versioned["last_heartbeat_age_seconds"].(float64)
+	if !ok || age < 0 || age > 300 {
+		t.Fatalf("versioned-node last_heartbeat_age_seconds = %v, want a small positive number", versioned["last_heartbeat_age_seconds"])
+	}
+
+	fresh, ok := byID["new-node"]
+	if !ok {
+		t.Fatalf("admin nodes response missing new-node: %v", rows)
+	}
+	if fresh["version"] != "" {
+		t.Fatalf("new-node version = %v, want empty string for the never-reported state", fresh["version"])
+	}
+	if fresh["last_heartbeat"] != nil {
+		t.Fatalf("new-node last_heartbeat = %v, want nil", fresh["last_heartbeat"])
+	}
+	if fresh["last_heartbeat_age_seconds"] != nil {
+		t.Fatalf("new-node last_heartbeat_age_seconds = %v, want nil for a node that never heartbeated", fresh["last_heartbeat_age_seconds"])
+	}
+}
+
 func TestAdminJobsReturnsRecentJobs(t *testing.T) {
 	server, client, db := newTestServer(t)
 	signUp(t, server, client, "admin-jobs@example.com")
