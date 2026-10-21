@@ -6,6 +6,7 @@
 		size?: 'sm' | 'md';
 		type?: 'button' | 'submit';
 		disabled?: boolean;
+		class?: string;
 		onclick?: (event: MouseEvent) => void;
 		children: Snippet;
 	};
@@ -15,6 +16,7 @@
 		size = 'md',
 		type = 'button',
 		disabled = false,
+		class: className = '',
 		onclick,
 		children
 	}: Props = $props();
@@ -38,7 +40,7 @@
 	{onclick}
 	class="inline-flex items-center justify-center gap-2 rounded-md font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 {variantClass[
 		variant
-	]} {sizeClass[size]}"
+	]} {sizeClass[size]} {className}"
 >
 	{@render children()}
 </button>
