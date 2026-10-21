@@ -46,7 +46,6 @@ type heartbeatCapacity struct {
 type heartbeatRequest struct {
 	NodeID     string               `json:"node_id"`
 	Host       string               `json:"host"`
-	Version    string               `json:"version"`
 	Capacity   heartbeatCapacity    `json:"capacity"`
 	Containers []heartbeatContainer `json:"containers"`
 }
@@ -119,9 +118,8 @@ func (n *Node) tick(ctx context.Context, controlURL, controlToken string, metric
 	}
 
 	body := heartbeatRequest{
-		NodeID:  n.NodeID,
-		Host:    n.HostAddress,
-		Version: n.Version,
+		NodeID: n.NodeID,
+		Host:   n.HostAddress,
 		Capacity: heartbeatCapacity{
 			PortRangeMin: n.PortMin,
 			PortRangeMax: n.PortMax,

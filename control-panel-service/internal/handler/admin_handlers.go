@@ -99,14 +99,13 @@ type adminContainerResponse struct {
 }
 
 type adminNodeResponse struct {
-	ID                   string                   `json:"id"`
-	Name                 string                   `json:"name"`
-	Address              string                   `json:"address"`
-	Capacity             map[string]any           `json:"capacity"`
-	Version              string                   `json:"version"`
-	LastHeartbeat        *time.Time               `json:"last_heartbeat"`
-	LastHeartbeatAgeSecs *int64                   `json:"last_heartbeat_age_seconds"`
-	Containers           []adminContainerResponse `json:"containers"`
+	ID            string                   `json:"id"`
+	Name          string                   `json:"name"`
+	Address       string                   `json:"address"`
+	Capacity      map[string]any           `json:"capacity"`
+	Version       string                   `json:"version"`
+	LastHeartbeat *time.Time               `json:"last_heartbeat"`
+	Containers    []adminContainerResponse `json:"containers"`
 }
 
 func (h *Handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
@@ -133,21 +132,14 @@ func (h *Handler) handleAdminNodes(w http.ResponseWriter, r *http.Request) {
 			capacity = map[string]any{}
 		}
 
-		var ageSecs *int64
-		if n.LastHeartbeat != nil {
-			age := int64(time.Since(*n.LastHeartbeat).Seconds())
-			ageSecs = &age
-		}
-
 		out[i] = adminNodeResponse{
-			ID:                   n.ID,
-			Name:                 n.Name,
-			Address:              n.Address,
-			Capacity:             capacity,
-			Version:              n.Version,
-			LastHeartbeat:        n.LastHeartbeat,
-			LastHeartbeatAgeSecs: ageSecs,
-			Containers:           containers,
+			ID:            n.ID,
+			Name:          n.Name,
+			Address:       n.Address,
+			Capacity:      capacity,
+			Version:       n.Version,
+			LastHeartbeat: n.LastHeartbeat,
+			Containers:    containers,
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

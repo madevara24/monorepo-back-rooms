@@ -65,7 +65,6 @@ export type AdminNode = {
 	capacity: Record<string, unknown>;
 	version: string;
 	last_heartbeat: string | null;
-	last_heartbeat_age_seconds: number | null;
 	containers: AdminContainer[];
 };
 
