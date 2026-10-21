@@ -56,6 +56,7 @@ func newTestNode(docker *fakeHeartbeatDocker) *Node {
 // separate from the production struct so the test fails if the wire
 // format silently changes.
 type decodedHeartbeat struct {
+	Version    string `json:"version"`
 	Containers []struct {
 		ID      string `json:"id"`
 		Status  string `json:"status"`
@@ -110,6 +111,30 @@ func TestTickCollectsMetricsOnFirstTickOnly(t *testing.T) {
 	second := bodies[1].Containers[0]
 	if second.Metrics != nil {
 		t.Fatalf("second heartbeat container = %+v, want no metrics (within metricsInterval of the first collection)", second)
+	}
+}
+
+// TestTickSendsAgentVersion covers the heartbeat body carrying the
+// agent's build version, so the control plane can store it on the node
+// record for admin version visibility.
+func TestTickSendsAgentVersion(t *testing.T) {
+	var body decodedHeartbeat
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode heartbeat body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	docker := &fakeHeartbeatDocker{}
+	n := newTestNode(docker)
+	n.Version = "abc1234"
+
+	n.tick(context.Background(), server.URL, "token", time.Hour)
+
+	if body.Version != "abc1234" {
+		t.Fatalf("heartbeat version = %q, want %q", body.Version, "abc1234")
 	}
 }
 
