@@ -178,7 +178,7 @@ func (h *Handler) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	created, password, err := h.provisionDatabase(r.Context(), req.UserID, req.Name, req.SizeGB)
+	created, password, err := h.provisionDatabase(r.Context(), req.UserID, req.Name, req.SizeGB, nil, int64(req.SizeGB)*defaultPricePerGBIDRMonth)
 	if isNotFound(err) {
 		writeError(w, http.StatusServiceUnavailable, "no node available")
 		return

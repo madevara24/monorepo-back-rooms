@@ -18,7 +18,7 @@ var ErrSlugTaken = errors.New("slug already taken")
 // row's current status, such as deleting an already-deleting database.
 var ErrInvalidState = errors.New("invalid state")
 
-const databaseColumns = `id, user_id, name, size_gb, status, slug, node_id, host, port, password_encrypted, created_at, updated_at`
+const databaseColumns = `id, user_id, name, size_gb, status, slug, node_id, host, port, password_encrypted, created_at, updated_at, plan_id, price_idr_month`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -27,7 +27,7 @@ type rowScanner interface {
 func scanDatabase(row rowScanner) (entities.Database, error) {
 	var d entities.Database
 	err := row.Scan(&d.ID, &d.UserID, &d.Name, &d.SizeGB, &d.Status, &d.Slug, &d.NodeID,
-		&d.Host, &d.Port, &d.PasswordEncrypted, &d.CreatedAt, &d.UpdatedAt)
+		&d.Host, &d.Port, &d.PasswordEncrypted, &d.CreatedAt, &d.UpdatedAt, &d.PlanID, &d.PriceIDRMonth)
 	return d, err
 }
 
@@ -73,8 +73,10 @@ func DatabaseByIDForUser(ctx context.Context, db *sql.DB, id, userID string) (en
 // "provisioning" status and queues the "provision" job that will carry it
 // to "running", as a single transaction so a database row is never left
 // without a job to drive it. It returns ErrSlugTaken if slug collides with
-// an existing row, so the caller can generate a new one and retry.
-func CreateDatabaseAndQueueProvision(ctx context.Context, db *sql.DB, userID, name string, sizeGB int, slug, nodeID string, passwordEncrypted []byte) (entities.Database, error) {
+// an existing row, so the caller can generate a new one and retry. planID
+// is nil for a database created without picking a plan; priceIDRMonth is
+// the price snapshotted at creation time either way.
+func CreateDatabaseAndQueueProvision(ctx context.Context, db *sql.DB, userID, name string, sizeGB int, slug, nodeID string, passwordEncrypted []byte, planID *string, priceIDRMonth int64) (entities.Database, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return entities.Database{}, err
@@ -82,9 +84,9 @@ func CreateDatabaseAndQueueProvision(ctx context.Context, db *sql.DB, userID, na
 	defer func() { _ = tx.Rollback() }()
 
 	row := tx.QueryRowContext(ctx, `
-		INSERT INTO databases (user_id, name, size_gb, status, slug, node_id, password_encrypted)
-		VALUES ($1, $2, $3, 'provisioning', $4, $5, $6)
-		RETURNING `+databaseColumns, userID, name, sizeGB, slug, nodeID, passwordEncrypted)
+		INSERT INTO databases (user_id, name, size_gb, status, slug, node_id, password_encrypted, plan_id, price_idr_month)
+		VALUES ($1, $2, $3, 'provisioning', $4, $5, $6, $7, $8)
+		RETURNING `+databaseColumns, userID, name, sizeGB, slug, nodeID, passwordEncrypted, planID, priceIDRMonth)
 	d, err := scanDatabase(row)
 	if isUniqueViolation(err) {
 		return entities.Database{}, ErrSlugTaken
