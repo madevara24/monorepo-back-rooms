@@ -129,7 +129,7 @@ func TestTickSendsAgentVersion(t *testing.T) {
 
 	docker := &fakeHeartbeatDocker{}
 	n := newTestNode(docker)
-	n.Config.Version = "abc1234"
+	n.Version = "abc1234"
 
 	n.tick(context.Background(), server.URL, "token", time.Hour)
 
