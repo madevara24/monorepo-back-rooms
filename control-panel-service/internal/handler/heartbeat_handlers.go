@@ -16,7 +16,8 @@ import (
 // mirror the shapes node-agent-service/internal/usecase's
 // heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
 // send. heartbeatRequest mirrors node-agent-service/internal/usecase's
-// heartbeatRequest.
+// heartbeatRequest; notably it carries no agent version field, so a
+// heartbeat never updates nodes.version.
 type heartbeatContainer struct {
 	ID      string                      `json:"id"`
 	Host    string                      `json:"host"`
@@ -48,7 +49,6 @@ type heartbeatCapacity struct {
 type heartbeatRequest struct {
 	NodeID     string               `json:"node_id"`
 	Host       string               `json:"host"`
-	Version    string               `json:"version"`
 	Capacity   heartbeatCapacity    `json:"capacity"`
 	Containers []heartbeatContainer `json:"containers"`
 }
@@ -85,7 +85,7 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not encode capacity")
 		return
 	}
-	if err := repository.UpdateNodeHeartbeat(r.Context(), h.DB, node.ID, req.Version, capacity); err != nil {
+	if err := repository.UpdateNodeHeartbeat(r.Context(), h.DB, node.ID, capacity); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not record heartbeat")
 		return
 	}

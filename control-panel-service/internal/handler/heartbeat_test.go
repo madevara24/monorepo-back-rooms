@@ -144,36 +144,6 @@ func TestAgentHeartbeatUpdatesCapacityAndUpsertsContainers(t *testing.T) {
 	}
 }
 
-// TestAgentHeartbeatRecordsVersion covers the agent reporting its build
-// version in the heartbeat body, so the control plane can store it on
-// the node record for GET /api/admin/nodes.
-func TestAgentHeartbeatRecordsVersion(t *testing.T) {
-	server, _, db := newTestServer(t)
-	insertNodeWithToken(t, db, "node-version", "version-token")
-
-	resp := heartbeat(t, server.URL, "version-token", map[string]any{
-		"node_id": "node-version",
-		"host":    "10.0.0.5",
-		"version": "abc1234",
-		"capacity": map[string]any{
-			"port_range_min": 21000, "port_range_max": 21999, "ports_total": 1000, "ports_used": 0,
-		},
-		"containers": []map[string]any{},
-	})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("heartbeat with version = %d, want %d", resp.StatusCode, http.StatusOK)
-	}
-	_ = resp.Body.Close()
-
-	var version string
-	if err := db.QueryRow(`SELECT version FROM nodes WHERE id = 'node-version'`).Scan(&version); err != nil {
-		t.Fatalf("look up node: %v", err)
-	}
-	if version != "abc1234" {
-		t.Fatalf("nodes.version = %q, want %q", version, "abc1234")
-	}
-}
-
 // TestAgentHeartbeatRecordsConnectionMetrics covers the agent attaching a
 // metrics snapshot to a container entry: the control plane must record it
 // in database_metrics.
