@@ -63,6 +63,9 @@ func NewMux(h *Handler) *http.ServeMux {
 	mux.HandleFunc("GET /api/admin/nodes", h.requireAdmin(h.handleAdminNodes))
 	mux.HandleFunc("GET /api/admin/jobs", h.requireAdmin(h.handleAdminJobs))
 	mux.HandleFunc("GET /api/admin/database-metrics", h.requireAdmin(h.handleAdminDatabaseMetrics))
+	mux.HandleFunc("GET /api/admin/plans", h.requireAdmin(h.handleAdminListPlans))
+	mux.HandleFunc("POST /api/admin/plans", h.requireAdmin(h.handleAdminCreatePlan))
+	mux.HandleFunc("PATCH /api/admin/plans/{id}", h.requireAdmin(h.handleAdminUpdatePlan))
 
 	return mux
 }
