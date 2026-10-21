@@ -211,27 +211,60 @@ jobs:
           MBR_NODE_RELEASE_SIGNING_KEY: ${{ secrets.MBR_NODE_RELEASE_SIGNING_KEY }}
         run: |
           version="$GITHUB_RUN_NUMBER"
+          tag="mbr-node-v${version}"
+          # The download URL is deterministic from the repo, tag, and
+          # asset name alone, so it's known *before* the GitHub release
+          # exists and can be signed along with version/commit/checksum.
+          # That closes a race: manifest.json is a public release asset,
+          # so without this, anyone who read a signed manifest could
+          # race CI's own registration call with the same valid
+          # signature but a different artifact_url.
+          artifact_url="https://github.com/$GITHUB_REPOSITORY/releases/download/${tag}/mbr-node"
           go run ./agent-release/cmd/sign \
             -binary dist/mbr-node \
             -version "$version" \
             -commit "$GITHUB_SHA" \
+            -artifact-url "$artifact_url" \
             -out dist/manifest.json
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "mbr-node-v${{ steps.sign.outputs.version }}" \
-            dist/mbr-node dist/manifest.json \
-            --title "mbr-node v${{ steps.sign.outputs.version }}" \
-            --notes "Commit $GITHUB_SHA" \
-            --repo "$GITHUB_REPOSITORY"
+          # Idempotent: a prior run of this same workflow run (same
+          # GITHUB_RUN_NUMBER, so the same tag) may have created the
+          # release and then failed at a later step (e.g. the control
+          # plane was unreachable). Re-running must not die on "tag
+          # already exists" — it should pick up where it left off.
+          if gh release view "${{ steps.sign.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release ${{ steps.sign.outputs.tag }} already exists; reusing it (resuming after a prior partial failure)"
+          else
+            gh release create "${{ steps.sign.outputs.tag }}" \
+              dist/mbr-node dist/manifest.json \
+              --title "mbr-node v${{ steps.sign.outputs.version }}" \
+              --notes "Commit $GITHUB_SHA" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
 
       - name: Register the release with the control plane
         run: |
-          artifact_url="https://github.com/$GITHUB_REPOSITORY/releases/download/mbr-node-v${{ steps.sign.outputs.version }}/mbr-node"
-          payload=$(jq --arg url "$artifact_url" '. + {artifact_url: $url}' dist/manifest.json)
-          curl -fsS -X POST https://mbr.madevara.com/api/releases \
+          status=$(curl -sS -o /tmp/register-response.json -w "%{http_code}" -X POST https://mbr.madevara.com/api/releases \
             -H "Content-Type: application/json" \
-            -d "$payload"
+            --data-binary @dist/manifest.json)
+          cat /tmp/register-response.json
+          echo
+          if [ "$status" = "201" ]; then
+            echo "registered release ${{ steps.sign.outputs.version }}"
+          elif [ "$status" = "409" ]; then
+            # A prior run of this same workflow run already registered
+            # it (e.g. this step reports success here but the runner
+            # was killed before recording it) — same idempotency case
+            # as the publish step above, not a real conflict, since the
+            # version/signature pair is unique to this run.
+            echo "release ${{ steps.sign.outputs.version }} was already registered; treating as success"
+          else
+            echo "::error::registering release ${{ steps.sign.outputs.version }} failed with HTTP $status"
+            exit 1
+          fi

@@ -55,16 +55,19 @@ func (h *Handler) handlePublishRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.ArtifactURL == "" {
-		writeError(w, http.StatusBadRequest, "artifact_url is required")
-		return
-	}
 
+	// ArtifactURL is part of the signed payload (see agent-release's
+	// CanonicalPayload), so a request that didn't come from CI's signing
+	// step — including one that read a published manifest.json and
+	// substituted a different artifact_url — fails verification here
+	// rather than being distinguishable as a separate "bad artifact_url"
+	// case.
 	manifest := release.Manifest{
-		Version:   req.Version,
-		CommitSHA: req.CommitSHA,
-		Checksum:  req.Checksum,
-		Signature: req.Signature,
+		Version:     req.Version,
+		CommitSHA:   req.CommitSHA,
+		Checksum:    req.Checksum,
+		ArtifactURL: req.ArtifactURL,
+		Signature:   req.Signature,
 	}
 	if err := release.Verify(manifest, h.ReleasePublicKey); err != nil {
 		writeError(w, http.StatusUnauthorized, "invalid release manifest: "+err.Error())

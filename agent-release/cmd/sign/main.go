@@ -1,7 +1,11 @@
 // Command sign builds a release manifest for an already-built mbr-node
-// binary: it checksums the binary, signs the version/commit/checksum
-// with the ed25519 private key in MBR_NODE_RELEASE_SIGNING_KEY, and
-// writes the resulting manifest as JSON. It never generates a key
+// binary: it checksums the binary, signs the
+// version/commit/checksum/artifact-url with the ed25519 private key in
+// MBR_NODE_RELEASE_SIGNING_KEY, and writes the resulting manifest as
+// JSON. The artifact URL must be known and fixed before signing (it is
+// part of the signed payload, not attached afterward) — see
+// deploy.yml's release-node job, which computes it deterministically
+// from the repo and version before this runs. It never generates a key
 // itself; see ../genkey for that one-time step.
 package main
 
@@ -28,11 +32,12 @@ func run() error {
 	binaryPath := flag.String("binary", "", "path to the built mbr-node binary")
 	version := flag.Int("version", 0, "monotonic release version (e.g. the CI run number)")
 	commitSHA := flag.String("commit", "", "git commit SHA the binary was built from")
+	artifactURL := flag.String("artifact-url", "", "absolute URL the binary will be downloadable from once published")
 	outPath := flag.String("out", "", "path to write manifest.json (defaults to stdout)")
 	flag.Parse()
 
-	if *binaryPath == "" || *version <= 0 || *commitSHA == "" {
-		return fmt.Errorf("usage: sign -binary <path> -version <n> -commit <sha> [-out manifest.json]")
+	if *binaryPath == "" || *version <= 0 || *commitSHA == "" || *artifactURL == "" {
+		return fmt.Errorf("usage: sign -binary <path> -version <n> -commit <sha> -artifact-url <url> [-out manifest.json]")
 	}
 
 	seedB64 := os.Getenv(signingKeyEnv)
@@ -60,10 +65,11 @@ func run() error {
 	}
 
 	manifest := release.Manifest{
-		Version:   *version,
-		CommitSHA: *commitSHA,
-		Checksum:  checksum,
-		Signature: release.Sign(*version, *commitSHA, checksum, ed25519.PrivateKey(priv)),
+		Version:     *version,
+		CommitSHA:   *commitSHA,
+		Checksum:    checksum,
+		ArtifactURL: *artifactURL,
+		Signature:   release.Sign(*version, *commitSHA, checksum, *artifactURL, ed25519.PrivateKey(priv)),
 	}
 
 	out, err := json.MarshalIndent(manifest, "", "  ")

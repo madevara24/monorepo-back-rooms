@@ -32,7 +32,7 @@ func publishReleaseBody(version int, commitSHA, checksum string, priv ed25519.Pr
 		"version":      version,
 		"commit_sha":   commitSHA,
 		"checksum":     checksum,
-		"signature":    release.Sign(version, commitSHA, checksum, priv),
+		"signature":    release.Sign(version, commitSHA, checksum, artifactURL, priv),
 		"artifact_url": artifactURL,
 	}
 }
@@ -61,6 +61,25 @@ func TestPublishReleaseRejectsAnInvalidSignature(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("POST /api/releases with a wrong-key signature = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+// TestPublishReleaseRejectsATamperedArtifactURL is the regression test
+// for the release-hijack race: manifest.json is a public GitHub Release
+// asset, so anyone who reads a signed (version, commit_sha, checksum,
+// signature) tuple from it and resubmits with a different artifact_url
+// must be rejected, not just whoever loses the monotonic-version race.
+func TestPublishReleaseRejectsATamperedArtifactURL(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	server, _ := newReleaseTestServer(t, pub)
+
+	body := publishReleaseBody(1, "abc123", releaseTestChecksum, priv, "https://example.invalid/mbr-node")
+	body["artifact_url"] = "https://attacker.invalid/mbr-node"
+
+	resp := postJSON(t, http.DefaultClient, server.URL+"/api/releases", body)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("POST /api/releases with a swapped artifact_url = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
 	}
 }
 

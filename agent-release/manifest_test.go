@@ -16,12 +16,15 @@ func testKeypair(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
 	return pub, priv
 }
 
-func signedManifest(version int, commitSHA, checksum string, priv ed25519.PrivateKey) Manifest {
+const testArtifactURL = "https://github.com/madevara24/monorepo-back-rooms/releases/download/mbr-node-v1/mbr-node"
+
+func signedManifest(version int, commitSHA, checksum, artifactURL string, priv ed25519.PrivateKey) Manifest {
 	return Manifest{
-		Version:   version,
-		CommitSHA: commitSHA,
-		Checksum:  checksum,
-		Signature: Sign(version, commitSHA, checksum, priv),
+		Version:     version,
+		CommitSHA:   commitSHA,
+		Checksum:    checksum,
+		ArtifactURL: artifactURL,
+		Signature:   Sign(version, commitSHA, checksum, artifactURL, priv),
 	}
 }
 
@@ -29,7 +32,7 @@ const testChecksum = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78
 
 func TestVerifyAcceptsAValidSignature(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(1, "abc123", testChecksum, priv)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
 
 	if err := Verify(m, pub); err != nil {
 		t.Fatalf("Verify = %v, want nil", err)
@@ -39,7 +42,7 @@ func TestVerifyAcceptsAValidSignature(t *testing.T) {
 func TestVerifyRejectsAWrongKey(t *testing.T) {
 	_, priv := testKeypair(t)
 	otherPub, _ := testKeypair(t)
-	m := signedManifest(1, "abc123", testChecksum, priv)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
 
 	if err := Verify(m, otherPub); err == nil {
 		t.Fatal("Verify with the wrong public key = nil, want an error")
@@ -48,7 +51,7 @@ func TestVerifyRejectsAWrongKey(t *testing.T) {
 
 func TestVerifyRejectsATamperedChecksum(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(1, "abc123", testChecksum, priv)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
 	m.Checksum = strings.Repeat("f", 64)
 
 	if err := Verify(m, pub); err == nil {
@@ -58,7 +61,7 @@ func TestVerifyRejectsATamperedChecksum(t *testing.T) {
 
 func TestVerifyRejectsATamperedVersion(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(1, "abc123", testChecksum, priv)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
 	m.Version = 2
 
 	if err := Verify(m, pub); err == nil {
@@ -68,7 +71,7 @@ func TestVerifyRejectsATamperedVersion(t *testing.T) {
 
 func TestVerifyRejectsATamperedCommit(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(1, "abc123", testChecksum, priv)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
 	m.CommitSHA = "def456"
 
 	if err := Verify(m, pub); err == nil {
@@ -76,9 +79,23 @@ func TestVerifyRejectsATamperedCommit(t *testing.T) {
 	}
 }
 
+// TestVerifyRejectsATamperedArtifactURL is the regression test for the
+// release-hijack scenario: a published manifest.json's artifact_url
+// must not be swappable by a third party who only ever saw the public,
+// already-signed manifest.
+func TestVerifyRejectsATamperedArtifactURL(t *testing.T) {
+	pub, priv := testKeypair(t)
+	m := signedManifest(1, "abc123", testChecksum, testArtifactURL, priv)
+	m.ArtifactURL = "https://attacker.invalid/mbr-node"
+
+	if err := Verify(m, pub); err == nil {
+		t.Fatal("Verify with a tampered artifact_url = nil, want an error")
+	}
+}
+
 func TestVerifyRejectsAMalformedChecksum(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(1, "abc123", "not-a-sha256-hex-checksum", priv)
+	m := signedManifest(1, "abc123", "not-a-sha256-hex-checksum", testArtifactURL, priv)
 
 	if err := Verify(m, pub); err == nil {
 		t.Fatal("Verify with a malformed checksum = nil, want an error")
@@ -87,10 +104,28 @@ func TestVerifyRejectsAMalformedChecksum(t *testing.T) {
 
 func TestVerifyRejectsAZeroVersion(t *testing.T) {
 	pub, priv := testKeypair(t)
-	m := signedManifest(0, "abc123", testChecksum, priv)
+	m := signedManifest(0, "abc123", testChecksum, testArtifactURL, priv)
 
 	if err := Verify(m, pub); err == nil {
 		t.Fatal("Verify with version 0 = nil, want an error")
+	}
+}
+
+func TestVerifyRejectsANonHTTPArtifactURL(t *testing.T) {
+	pub, priv := testKeypair(t)
+	m := signedManifest(1, "abc123", testChecksum, "javascript:alert(1)", priv)
+
+	if err := Verify(m, pub); err == nil {
+		t.Fatal("Verify with a non-http(s) artifact_url = nil, want an error")
+	}
+}
+
+func TestVerifyRejectsAnEmptyArtifactURL(t *testing.T) {
+	pub, priv := testKeypair(t)
+	m := signedManifest(1, "abc123", testChecksum, "", priv)
+
+	if err := Verify(m, pub); err == nil {
+		t.Fatal("Verify with an empty artifact_url = nil, want an error")
 	}
 }
 
