@@ -70,3 +70,68 @@ func TestGetPlanByIDAndBySlug(t *testing.T) {
 		t.Fatalf("GetPlanByID(%s).Slug = %q, want production", want.ID, got.Slug)
 	}
 }
+
+func TestListAllPlansOrderingAndIncludesInactive(t *testing.T) {
+	db := storetest.Open(t)
+	ctx := context.Background()
+
+	if _, err := db.Exec(`UPDATE plans SET active = false WHERE slug = 'sandbox'`); err != nil {
+		t.Fatalf("deactivate sandbox plan: %v", err)
+	}
+
+	plans, err := repository.ListAllPlans(ctx, db)
+	if err != nil {
+		t.Fatalf("ListAllPlans: %v", err)
+	}
+	if len(plans) != 4 {
+		t.Fatalf("ListAllPlans returned %d plans, want 4 (including the inactive one)", len(plans))
+	}
+
+	wantSlugs := []string{"sandbox", "side-project", "production", "heavy"}
+	for i, want := range wantSlugs {
+		if plans[i].Slug != want {
+			t.Fatalf("plans[%d].Slug = %q, want %q", i, plans[i].Slug, want)
+		}
+	}
+
+	for _, p := range plans {
+		if p.Slug == "sandbox" && p.Active {
+			t.Fatalf("ListAllPlans reported sandbox as active after deactivating it")
+		}
+	}
+}
+
+func TestListAllPlansReportsDatabaseCount(t *testing.T) {
+	db := storetest.Open(t)
+	ctx := context.Background()
+
+	production, err := repository.GetPlanBySlug(ctx, db, "production")
+	if err != nil {
+		t.Fatalf("GetPlanBySlug(production): %v", err)
+	}
+
+	var userID string
+	if err := db.QueryRow(`
+		INSERT INTO users (email, password_hash) VALUES ('plans-count@example.com', 'x') RETURNING id
+	`).Scan(&userID); err != nil {
+		t.Fatalf("insert user fixture: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO databases (user_id, name, size_gb, status, plan_id) VALUES ($1, 'a', 10, 'running', $2), ($1, 'b', 10, 'running', $2)
+	`, userID, production.ID); err != nil {
+		t.Fatalf("insert database fixtures: %v", err)
+	}
+
+	plans, err := repository.ListAllPlans(ctx, db)
+	if err != nil {
+		t.Fatalf("ListAllPlans: %v", err)
+	}
+	for _, p := range plans {
+		if p.Slug == "production" && p.DatabaseCount != 2 {
+			t.Fatalf("production DatabaseCount = %d, want 2", p.DatabaseCount)
+		}
+		if p.Slug != "production" && p.DatabaseCount != 0 {
+			t.Fatalf("%s DatabaseCount = %d, want 0", p.Slug, p.DatabaseCount)
+		}
+	}
+}

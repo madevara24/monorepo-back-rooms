@@ -66,6 +66,24 @@ func postJSON(t *testing.T, client *http.Client, url string, body any) *http.Res
 	return resp
 }
 
+func patchJSON(t *testing.T, client *http.Client, url string, body any) *http.Response {
+	t.Helper()
+	b, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewReader(b))
+	if err != nil {
+		t.Fatalf("build PATCH %s: %v", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("PATCH %s: %v", url, err)
+	}
+	return resp
+}
+
 func decode(t *testing.T, resp *http.Response, dst any) {
 	t.Helper()
 	defer func() { _ = resp.Body.Close() }()

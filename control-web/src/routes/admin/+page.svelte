@@ -5,11 +5,13 @@
 	import {
 		errorMessage,
 		postJSON,
+		patchJSON,
 		type AdminDatabase,
 		type AdminDatabaseMetric,
 		type AdminJob,
 		type AdminNode,
 		type AdminOverview,
+		type AdminPlan,
 		type AdminUser,
 		type CreateDatabaseResult
 	} from '$lib/api';
@@ -25,6 +27,7 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import Dialog from '$lib/components/Dialog.svelte';
 
 	const dokployURL = publicEnv.PUBLIC_DOKPLOY_URL ?? '';
 
@@ -39,6 +42,7 @@
 	let jobs: AdminJob[] = $state([]);
 	let databaseMetrics: AdminDatabaseMetric[] = $state([]);
 	let metricsError: string = $state('');
+	let plans: AdminPlan[] = $state([]);
 
 	let createUserId: string = $state('');
 	let createName: string = $state('');
@@ -49,6 +53,17 @@
 
 	let actionTarget: string = $state('');
 	let confirmAction: { kind: 'delete' | 'retry'; db: AdminDatabase } | null = $state(null);
+
+	let planDialogOpen: boolean = $state(false);
+	let editingPlan: AdminPlan | null = $state(null);
+	let planSlug: string = $state('');
+	let planName: string = $state('');
+	let planSizeGB: number = $state(1);
+	let planPriceIDRMonth: number = $state(0);
+	let planTagline: string = $state('');
+	let planBadge: string = $state('');
+	let planSortOrder: number = $state(0);
+	let planSaving: boolean = $state(false);
 
 	const databaseCount = $derived(databases.length);
 	const provisionedGB = $derived(databases.reduce((sum, d) => sum + d.size_gb, 0));
@@ -83,13 +98,14 @@
 				return;
 			}
 
-			[overview, users, databases, nodes, jobs, databaseMetrics] = await Promise.all([
+			[overview, users, databases, nodes, jobs, databaseMetrics, plans] = await Promise.all([
 				loadJSON<AdminOverview>('/api/admin/overview'),
 				loadJSON<AdminUser[]>('/api/admin/users'),
 				loadJSON<AdminDatabase[]>('/api/admin/databases'),
 				loadJSON<AdminNode[]>('/api/admin/nodes'),
 				loadJSON<AdminJob[]>('/api/admin/jobs'),
-				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics')
+				loadJSON<AdminDatabaseMetric[]>('/api/admin/database-metrics'),
+				loadJSON<AdminPlan[]>('/api/admin/plans')
 			]);
 			if (users.length > 0) {
 				createUserId = users[0].id;
@@ -169,6 +185,87 @@
 			}
 			await reloadDatabasesAndOverview();
 			pushToast('success', kind === 'delete' ? `Deleted "${db.name}".` : `Retrying "${db.name}".`);
+		} finally {
+			actionTarget = '';
+		}
+	}
+
+	async function reloadPlans() {
+		plans = await loadJSON<AdminPlan[]>('/api/admin/plans');
+	}
+
+	function openCreatePlanDialog() {
+		editingPlan = null;
+		planSlug = '';
+		planName = '';
+		planSizeGB = 1;
+		planPriceIDRMonth = 0;
+		planTagline = '';
+		planBadge = '';
+		planSortOrder = 0;
+		planDialogOpen = true;
+	}
+
+	function openEditPlanDialog(plan: AdminPlan) {
+		editingPlan = plan;
+		planSlug = plan.slug;
+		planName = plan.name;
+		planSizeGB = plan.size_gb;
+		planPriceIDRMonth = plan.price_idr_month;
+		planTagline = plan.tagline;
+		planBadge = plan.badge;
+		planSortOrder = plan.sort_order;
+		planDialogOpen = true;
+	}
+
+	function closePlanDialog() {
+		planDialogOpen = false;
+	}
+
+	async function submitPlanForm(event: SubmitEvent) {
+		event.preventDefault();
+		planSaving = true;
+		try {
+			const res = editingPlan
+				? await patchJSON(`/api/admin/plans/${editingPlan.id}`, {
+						name: planName,
+						size_gb: planSizeGB,
+						price_idr_month: planPriceIDRMonth,
+						tagline: planTagline,
+						badge: planBadge,
+						sort_order: planSortOrder
+					})
+				: await postJSON('/api/admin/plans', {
+						slug: planSlug,
+						name: planName,
+						size_gb: planSizeGB,
+						price_idr_month: planPriceIDRMonth,
+						tagline: planTagline,
+						badge: planBadge,
+						sort_order: planSortOrder
+					});
+			if (!res.ok) {
+				pushToast('error', await errorMessage(res));
+				return;
+			}
+			planDialogOpen = false;
+			await reloadPlans();
+			pushToast('success', editingPlan ? `Updated "${planName}".` : `Created "${planName}".`);
+		} finally {
+			planSaving = false;
+		}
+	}
+
+	async function togglePlanActive(plan: AdminPlan) {
+		actionTarget = plan.id;
+		try {
+			const res = await patchJSON(`/api/admin/plans/${plan.id}`, { active: !plan.active });
+			if (!res.ok) {
+				pushToast('error', await errorMessage(res));
+				return;
+			}
+			await reloadPlans();
+			pushToast('success', plan.active ? `Deactivated "${plan.name}".` : `Activated "${plan.name}".`);
 		} finally {
 			actionTarget = '';
 		}
@@ -368,6 +465,60 @@
 			{/if}
 		</Panel>
 
+		<Panel title="Packages">
+			<div class="mb-2 flex justify-end">
+				<Button size="sm" onclick={openCreatePlanDialog}>New package</Button>
+			</div>
+			{#if plans.length === 0}
+				<EmptyState message="No packages yet." />
+			{:else}
+				<Table>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Slug</th>
+							<th>Size (GB)</th>
+							<th>Price / month</th>
+							<th>Badge</th>
+							<th>Order</th>
+							<th>Active</th>
+							<th>Databases</th>
+							<th></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each plans as plan (plan.id)}
+							<tr class={plan.active ? '' : 'opacity-50'}>
+								<td>{plan.name}</td>
+								<td class="font-mono text-xs">{plan.slug}</td>
+								<td>{plan.size_gb}</td>
+								<td>Rp {plan.price_idr_month.toLocaleString('id-ID')}</td>
+								<td>{plan.badge || '-'}</td>
+								<td>{plan.sort_order}</td>
+								<td>{plan.active ? 'active' : 'inactive'}</td>
+								<td>{plan.database_count}</td>
+								<td>
+									<div class="flex gap-2">
+										<Button variant="secondary" size="sm" onclick={() => openEditPlanDialog(plan)}>
+											Edit
+										</Button>
+										<Button
+											variant={plan.active ? 'danger' : 'secondary'}
+											size="sm"
+											disabled={actionTarget === plan.id}
+											onclick={() => togglePlanActive(plan)}
+										>
+											{plan.active ? 'Deactivate' : 'Reactivate'}
+										</Button>
+									</div>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</Table>
+			{/if}
+		</Panel>
+
 		<Panel title="Connection pressure">
 			<div class="mb-2 flex justify-end">
 				<Button variant="secondary" size="sm" onclick={reloadMetrics}>Refresh</Button>
@@ -478,3 +629,41 @@
 	onconfirm={confirmPending}
 	oncancel={() => (confirmAction = null)}
 />
+
+<Dialog
+	open={planDialogOpen}
+	title={editingPlan ? 'Edit package' : 'New package'}
+	onclose={closePlanDialog}
+>
+	<form class="flex flex-col gap-3" onsubmit={submitPlanForm}>
+		<Field label="Name" id="plan-name">
+			<Input id="plan-name" type="text" bind:value={planName} required />
+		</Field>
+		<Field label="Slug" id="plan-slug">
+			{#if editingPlan}
+				<Input id="plan-slug" type="text" value={planSlug} readonly />
+			{:else}
+				<Input id="plan-slug" type="text" bind:value={planSlug} required />
+			{/if}
+		</Field>
+		<Field label="Size (GB)" id="plan-size">
+			<Input id="plan-size" type="number" min={1} max={20} bind:value={planSizeGB} required />
+		</Field>
+		<Field label="Price / month" id="plan-price">
+			<Input id="plan-price" type="number" min={1} bind:value={planPriceIDRMonth} required />
+		</Field>
+		<Field label="Tagline" id="plan-tagline">
+			<Input id="plan-tagline" type="text" bind:value={planTagline} />
+		</Field>
+		<Field label="Badge" id="plan-badge">
+			<Input id="plan-badge" type="text" bind:value={planBadge} />
+		</Field>
+		<Field label="Order" id="plan-order">
+			<Input id="plan-order" type="number" bind:value={planSortOrder} required />
+		</Field>
+		<div class="flex justify-end gap-2">
+			<Button type="button" variant="secondary" onclick={closePlanDialog}>Cancel</Button>
+			<Button type="submit" disabled={planSaving}>{editingPlan ? 'Save' : 'Create'}</Button>
+		</div>
+	</form>
+</Dialog>

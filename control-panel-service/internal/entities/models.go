@@ -49,7 +49,8 @@ type Database struct {
 // Plan is a purchasable database package: a fixed size and a monthly
 // price. Deactivating a plan (Active = false) hides it from GET /api/plans
 // and blocks new purchases without touching databases that already
-// reference it.
+// reference it. DatabaseCount is only populated by the admin listing
+// (repository.ListAllPlans); every other reader leaves it zero.
 type Plan struct {
 	ID            string
 	Slug          string
@@ -62,6 +63,7 @@ type Plan struct {
 	Active        bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+	DatabaseCount int
 }
 
 // Node is a registered mbr-node agent. TokenHash is the SHA-256 hash of

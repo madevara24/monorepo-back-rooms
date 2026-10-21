@@ -27,6 +27,19 @@ export type Plan = {
 	sort_order: number;
 };
 
+export type AdminPlan = {
+	id: string;
+	slug: string;
+	name: string;
+	size_gb: number;
+	price_idr_month: number;
+	tagline: string;
+	badge: string;
+	sort_order: number;
+	active: boolean;
+	database_count: number;
+};
+
 export type Invoice = {
 	id: string;
 	status: string;
@@ -122,6 +135,14 @@ export function postJSON(path: string, body?: unknown): Promise<Response> {
 		method: 'POST',
 		headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
 		body: body === undefined ? undefined : JSON.stringify(body)
+	});
+}
+
+export function patchJSON(path: string, body: unknown): Promise<Response> {
+	return fetch(path, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
 	});
 }
 
