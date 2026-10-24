@@ -29,12 +29,12 @@ var ErrLastActivePlan = errors.New("at least one active plan is required")
 // the first one's effect.
 const planActiveGuardLockKey = 847002615
 
-const planColumns = `id, slug, name, size_gb, price_idr_month, tagline, badge, sort_order, active, created_at, updated_at`
+const planColumns = `id, slug, name, size_gb, price_idr_month, tagline, badge, sort_order, active, purchasable, created_at, updated_at`
 
 func scanPlan(row rowScanner) (entities.Plan, error) {
 	var p entities.Plan
 	err := row.Scan(&p.ID, &p.Slug, &p.Name, &p.SizeGB, &p.PriceIDRMonth, &p.Tagline,
-		&p.Badge, &p.SortOrder, &p.Active, &p.CreatedAt, &p.UpdatedAt)
+		&p.Badge, &p.SortOrder, &p.Active, &p.Purchasable, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -105,7 +105,7 @@ func ListAllPlans(ctx context.Context, db *sql.DB) ([]entities.Plan, error) {
 	for rows.Next() {
 		var p entities.Plan
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.SizeGB, &p.PriceIDRMonth, &p.Tagline,
-			&p.Badge, &p.SortOrder, &p.Active, &p.CreatedAt, &p.UpdatedAt, &p.DatabaseCount); err != nil {
+			&p.Badge, &p.SortOrder, &p.Active, &p.Purchasable, &p.CreatedAt, &p.UpdatedAt, &p.DatabaseCount); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -117,9 +117,9 @@ func ListAllPlans(ctx context.Context, db *sql.DB) ([]entities.Plan, error) {
 // returns ErrPlanSlugTaken if the slug already belongs to another plan.
 func CreatePlan(ctx context.Context, db *sql.DB, p entities.Plan) (entities.Plan, error) {
 	row := db.QueryRowContext(ctx, `
-		INSERT INTO plans (slug, name, size_gb, price_idr_month, tagline, badge, sort_order, active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING `+planColumns, p.Slug, p.Name, p.SizeGB, p.PriceIDRMonth, p.Tagline, p.Badge, p.SortOrder, p.Active)
+		INSERT INTO plans (slug, name, size_gb, price_idr_month, tagline, badge, sort_order, active, purchasable)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING `+planColumns, p.Slug, p.Name, p.SizeGB, p.PriceIDRMonth, p.Tagline, p.Badge, p.SortOrder, p.Active, p.Purchasable)
 	created, err := scanPlan(row)
 	if isUniqueViolation(err) {
 		return entities.Plan{}, ErrPlanSlugTaken
@@ -142,6 +142,7 @@ type PlanUpdate struct {
 	Badge         *string
 	SortOrder     *int
 	Active        *bool
+	Purchasable   *bool
 }
 
 // UpdatePlan applies upd's non-nil fields to the plan identified by id and
@@ -209,13 +210,16 @@ func UpdatePlan(ctx context.Context, db *sql.DB, id string, upd PlanUpdate) (ent
 	if upd.Active != nil {
 		current.Active = *upd.Active
 	}
+	if upd.Purchasable != nil {
+		current.Purchasable = *upd.Purchasable
+	}
 
 	row = tx.QueryRowContext(ctx, `
 		UPDATE plans
-		SET name = $2, size_gb = $3, price_idr_month = $4, tagline = $5, badge = $6, sort_order = $7, active = $8, updated_at = now()
+		SET name = $2, size_gb = $3, price_idr_month = $4, tagline = $5, badge = $6, sort_order = $7, active = $8, purchasable = $9, updated_at = now()
 		WHERE id = $1
 		RETURNING `+planColumns, id, current.Name, current.SizeGB, current.PriceIDRMonth,
-		current.Tagline, current.Badge, current.SortOrder, current.Active)
+		current.Tagline, current.Badge, current.SortOrder, current.Active, current.Purchasable)
 	updated, err := scanPlan(row)
 	if err != nil {
 		return entities.Plan{}, err

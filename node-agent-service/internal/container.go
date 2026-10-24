@@ -39,6 +39,7 @@ func New(cfg config.Config, commit string) (*Container, error) {
 			PortMin:           cfg.PortMin,
 			PortMax:           cfg.PortMax,
 			Version:           commit,
+			DemoMode:          cfg.DemoMode,
 			TenantTLSCertPath: cfg.TenantTLSCert,
 			TenantTLSKeyPath:  cfg.TenantTLSKey,
 		},

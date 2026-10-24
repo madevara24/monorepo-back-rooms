@@ -30,6 +30,9 @@ func NewMux(n *usecase.Node) *http.ServeMux {
 	mux.HandleFunc("DELETE /v1/databases/{id}", h.handleDeleteDatabase)
 	mux.HandleFunc("GET /v1/databases/{id}/snapshots", h.handleSnapshotsGated)
 	mux.HandleFunc("POST /v1/databases/{id}/snapshots", h.handleSnapshotsGated)
+	if n.DemoMode {
+		mux.HandleFunc("POST /v1/demo/reset", h.handleResetDemo)
+	}
 
 	return mux
 }
@@ -148,6 +151,18 @@ func (h *Handler) handleDeleteDatabase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleResetDemo(w http.ResponseWriter, r *http.Request) {
+	counts, err := h.Node.ResetDemo(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":  "demo reset failed",
+			"counts": counts,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, counts)
 }
 
 // handleSnapshotsGated covers every snapshot route; snapshots are out of

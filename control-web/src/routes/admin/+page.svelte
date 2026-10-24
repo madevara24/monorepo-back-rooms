@@ -27,6 +27,7 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 
 	const dokployURL = publicEnv.PUBLIC_DOKPLOY_URL ?? '';
@@ -53,6 +54,7 @@
 
 	let actionTarget: string = $state('');
 	let confirmAction: { kind: 'delete' | 'retry'; db: AdminDatabase } | null = $state(null);
+	let confirmReset: boolean = $state(false);
 
 	let planDialogOpen: boolean = $state(false);
 	let editingPlan: AdminPlan | null = $state(null);
@@ -63,6 +65,7 @@
 	let planTagline: string = $state('');
 	let planBadge: string = $state('');
 	let planSortOrder: number = $state(0);
+	let planPurchasable: boolean = $state(true);
 	let planSaving: boolean = $state(false);
 
 	const databaseCount = $derived(databases.length);
@@ -168,6 +171,16 @@
 		confirmAction = { kind: 'retry', db };
 	}
 
+	async function resetDemo() {
+		confirmReset = false;
+		const res = await postJSON('/api/admin/demo/reset');
+		if (!res.ok) {
+			pushToast('error', await errorMessage(res));
+			return;
+		}
+		location.reload();
+	}
+
 	async function confirmPending() {
 		const action = confirmAction;
 		if (!action) return;
@@ -199,10 +212,11 @@
 		planSlug = '';
 		planName = '';
 		planSizeGB = 1;
-		planPriceIDRMonth = 0;
+		planPriceIDRMonth = 10000;
 		planTagline = '';
 		planBadge = '';
 		planSortOrder = 0;
+		planPurchasable = true;
 		planDialogOpen = true;
 	}
 
@@ -215,6 +229,7 @@
 		planTagline = plan.tagline;
 		planBadge = plan.badge;
 		planSortOrder = plan.sort_order;
+		planPurchasable = plan.purchasable;
 		planDialogOpen = true;
 	}
 
@@ -233,7 +248,8 @@
 						price_idr_month: planPriceIDRMonth,
 						tagline: planTagline,
 						badge: planBadge,
-						sort_order: planSortOrder
+						sort_order: planSortOrder,
+						purchasable: planPurchasable
 					})
 				: await postJSON('/api/admin/plans', {
 						slug: planSlug,
@@ -242,7 +258,8 @@
 						price_idr_month: planPriceIDRMonth,
 						tagline: planTagline,
 						badge: planBadge,
-						sort_order: planSortOrder
+						sort_order: planSortOrder,
+						purchasable: planPurchasable
 					});
 			if (!res.ok) {
 				pushToast('error', await errorMessage(res));
@@ -279,6 +296,10 @@
 	]}
 />
 <StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
+<div class="mx-auto flex max-w-5xl items-center justify-between px-4 pt-3">
+	<DemoCountdown />
+	<Button variant="danger" size="sm" onclick={() => (confirmReset = true)}>Reset demo</Button>
+</div>
 
 <main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
 	{#if loading}
@@ -482,6 +503,7 @@
 							<th>Badge</th>
 							<th>Order</th>
 							<th>Active</th>
+							<th>Purchasable</th>
 							<th>Databases</th>
 							<th></th>
 						</tr>
@@ -496,6 +518,7 @@
 								<td>{plan.badge || '-'}</td>
 								<td>{plan.sort_order}</td>
 								<td>{plan.active ? 'active' : 'inactive'}</td>
+								<td>{plan.purchasable ? 'buyable' : 'sold out'}</td>
 								<td>{plan.database_count}</td>
 								<td>
 									<div class="flex gap-2">
@@ -630,6 +653,16 @@
 	oncancel={() => (confirmAction = null)}
 />
 
+<ConfirmDialog
+	open={confirmReset}
+	title="Reset the demo"
+	message="Delete every visitor account, database, invoice, and tenant container now?"
+	confirmLabel="Reset"
+	danger
+	onconfirm={resetDemo}
+	oncancel={() => (confirmReset = false)}
+/>
+
 <Dialog
 	open={planDialogOpen}
 	title={editingPlan ? 'Edit package' : 'New package'}
@@ -661,6 +694,10 @@
 		<Field label="Order" id="plan-order">
 			<Input id="plan-order" type="number" bind:value={planSortOrder} required />
 		</Field>
+		<label class="flex items-center gap-2 text-sm text-text">
+			<input type="checkbox" bind:checked={planPurchasable} />
+			Purchasable
+		</label>
 		<div class="flex justify-end gap-2">
 			<Button type="button" variant="secondary" onclick={closePlanDialog}>Cancel</Button>
 			<Button type="submit" disabled={planSaving}>{editingPlan ? 'Save' : 'Create'}</Button>

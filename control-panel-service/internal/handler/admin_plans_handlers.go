@@ -24,6 +24,7 @@ type adminPlanResponse struct {
 	Badge         string `json:"badge"`
 	SortOrder     int    `json:"sort_order"`
 	Active        bool   `json:"active"`
+	Purchasable   bool   `json:"purchasable"`
 	DatabaseCount int    `json:"database_count"`
 }
 
@@ -38,6 +39,7 @@ func toAdminPlanResponse(p entities.Plan) adminPlanResponse {
 		Badge:         p.Badge,
 		SortOrder:     p.SortOrder,
 		Active:        p.Active,
+		Purchasable:   p.Purchasable,
 		DatabaseCount: p.DatabaseCount,
 	}
 }
@@ -115,6 +117,7 @@ type createPlanRequest struct {
 	Badge         string `json:"badge"`
 	SortOrder     int    `json:"sort_order"`
 	Active        *bool  `json:"active"`
+	Purchasable   *bool  `json:"purchasable"`
 }
 
 // handleAdminCreatePlan adds a new package to the shop. active defaults
@@ -147,6 +150,10 @@ func (h *Handler) handleAdminCreatePlan(w http.ResponseWriter, r *http.Request) 
 	if req.Active != nil {
 		active = *req.Active
 	}
+	purchasable := true
+	if req.Purchasable != nil {
+		purchasable = *req.Purchasable
+	}
 
 	created, err := repository.CreatePlan(r.Context(), h.DB, entities.Plan{
 		Slug:          req.Slug,
@@ -157,6 +164,7 @@ func (h *Handler) handleAdminCreatePlan(w http.ResponseWriter, r *http.Request) 
 		Badge:         req.Badge,
 		SortOrder:     req.SortOrder,
 		Active:        active,
+		Purchasable:   purchasable,
 	})
 	if errors.Is(err, repository.ErrPlanSlugTaken) {
 		writeError(w, http.StatusConflict, "plan slug already exists")
@@ -178,6 +186,7 @@ type updatePlanRequest struct {
 	Badge         *string `json:"badge"`
 	SortOrder     *int    `json:"sort_order"`
 	Active        *bool   `json:"active"`
+	Purchasable   *bool   `json:"purchasable"`
 }
 
 // handleAdminUpdatePlan edits any subset of a plan's fields except its
@@ -233,6 +242,7 @@ func (h *Handler) handleAdminUpdatePlan(w http.ResponseWriter, r *http.Request) 
 		Badge:         req.Badge,
 		SortOrder:     req.SortOrder,
 		Active:        req.Active,
+		Purchasable:   req.Purchasable,
 	})
 	if isNotFound(err) {
 		writeError(w, http.StatusNotFound, "plan not found")

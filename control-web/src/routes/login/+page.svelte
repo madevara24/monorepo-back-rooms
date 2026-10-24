@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { errorMessage, postJSON } from '$lib/api';
@@ -11,6 +12,11 @@
 	let password: string = $state('');
 	let error: string = $state('');
 	let submitting: boolean = $state(false);
+	let resetNotice = $state(false);
+
+	onMount(() => {
+		resetNotice = new URLSearchParams(location.search).get('reset') === '1';
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -36,6 +42,13 @@
 	</div>
 
 	<h1 class="text-2xl font-semibold text-text">Log in</h1>
+
+	{#if resetNotice}
+		<p class="max-w-sm text-center text-sm text-muted">
+			The demo reset. The account and its databases were removed. Sign in again, or create a new
+			account.
+		</p>
+	{/if}
 
 	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
 		<Field label="Email" id="login-email">

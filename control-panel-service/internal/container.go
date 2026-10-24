@@ -5,10 +5,12 @@
 package container
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/config"
@@ -37,10 +39,11 @@ const metricsRetentionDays = 14
 // reconciler, and metrics retention pruner.
 type Container struct {
 	DB               *sql.DB
-	Mux              *http.ServeMux
+	Mux              http.Handler
 	Worker           *usecase.Worker
 	Reconciler       *usecase.Reconciler
 	MetricsRetention *usecase.MetricsRetention
+	Demo             *usecase.DemoReset
 }
 
 // New connects to the database, applies migrations, and wires every
@@ -84,12 +87,30 @@ func New(cfg config.Config, commit string) (*Container, error) {
 		Cipher:       cipher,
 	}
 
+	var demo *usecase.DemoReset
+	if cfg.DemoMode {
+		if _, err := usecase.SeedAdmin(context.Background(), db, cfg.DemoAdminEmail, cfg.DemoAdminPassword); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("seed demo admin: %w", err)
+		}
+		demo = &usecase.DemoReset{
+			DB:         db,
+			Agent:      agent,
+			Reconciler: reconciler,
+			Gate:       &sync.RWMutex{},
+		}
+		worker.Gate = demo.Gate
+		worker.Paused = demo.Paused.Load
+		h.Demo = demo
+	}
+
 	return &Container{
 		DB:               db,
 		Mux:              handler.NewMux(h),
 		Worker:           worker,
 		Reconciler:       reconciler,
 		MetricsRetention: metricsRetention,
+		Demo:             demo,
 	}, nil
 }
 

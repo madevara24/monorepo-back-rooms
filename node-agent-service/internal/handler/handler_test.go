@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,8 @@ type fakeDocker struct {
 	// startErr simulates ContainerCreate succeeding but ContainerStart
 	// failing: the real client must remove the created container in that
 	// case, so the fake mirrors that contract by never registering one.
-	startErr error
+	startErr  error
+	removeErr error
 }
 
 func newFakeDocker() *fakeDocker {
@@ -82,6 +84,9 @@ func (f *fakeDocker) CreateTenantContainer(_ context.Context, spec entities.Cont
 func (f *fakeDocker) RemoveTenantContainer(_ context.Context, containerID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.removeErr != nil {
+		return f.removeErr
+	}
 	if c, ok := f.containers[containerID]; ok {
 		delete(f.usedPorts, c.Port)
 		delete(f.containers, containerID)
@@ -125,6 +130,20 @@ func (v *fakeVolumes) Remove(id string) error {
 	return nil
 }
 
+func (v *fakeVolumes) CleanOrphans(_ context.Context, keep map[string]bool) (int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	removed := 0
+	for id := range v.created {
+		if keep[id] {
+			continue
+		}
+		delete(v.created, id)
+		removed++
+	}
+	return removed, nil
+}
+
 func (v *fakeVolumes) has(id string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -133,6 +152,10 @@ func (v *fakeVolumes) has(id string) bool {
 }
 
 func newTestServer(docker *fakeDocker, volumes *fakeVolumes) *httptest.Server {
+	return newTestServerWithDemo(docker, volumes, false)
+}
+
+func newTestServerWithDemo(docker *fakeDocker, volumes *fakeVolumes, demo bool) *httptest.Server {
 	n := &usecase.Node{
 		Config: entities.Config{
 			NodeID:      "node-1",
@@ -141,6 +164,7 @@ func newTestServer(docker *fakeDocker, volumes *fakeVolumes) *httptest.Server {
 			PortMin:     21000,
 			PortMax:     21002,
 			Version:     "test-commit",
+			DemoMode:    demo,
 		},
 		Docker:  docker,
 		Volumes: volumes,
@@ -442,4 +466,114 @@ type databaseResponse struct {
 	Host   string `json:"host"`
 	Port   int    `json:"port"`
 	Status string `json:"status"`
+}
+
+func TestResetDemoRemovesTenantStateAndIsIdempotent(t *testing.T) {
+	docker := newFakeDocker()
+	volumes := newFakeVolumes()
+	server := newTestServerWithDemo(docker, volumes, true)
+	defer server.Close()
+
+	for _, id := range []string{"db-a", "db-b"} {
+		resp := postJSON(t, server.URL+"/v1/databases", map[string]any{
+			"id": id, "size_gb": 1, "password": "pw",
+		})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create %s = %d, want %d", id, resp.StatusCode, http.StatusCreated)
+		}
+		_ = resp.Body.Close()
+	}
+	volumes.created["orphan"] = 1
+
+	resp, err := http.Post(server.URL+"/v1/demo/reset", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST reset: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reset = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var counts entities.ResetCounts
+	decode(t, resp, &counts)
+	if counts.Containers != 2 || counts.Volumes != 2 || counts.Orphans != 1 {
+		t.Fatalf("reset counts = %+v, want 2 containers, 2 volumes, 1 orphan", counts)
+	}
+
+	remaining, err := docker.ListTenantContainers(context.Background())
+	if err != nil {
+		t.Fatalf("list containers: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("containers after reset = %d, want 0", len(remaining))
+	}
+	if volumes.has("db-a") || volumes.has("db-b") || volumes.has("orphan") {
+		t.Fatalf("volumes after reset = %+v, want none", volumes.created)
+	}
+
+	resp, err = http.Post(server.URL+"/v1/demo/reset", "application/json", nil)
+	if err != nil {
+		t.Fatalf("second POST reset: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("second reset = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var second entities.ResetCounts
+	decode(t, resp, &second)
+	if second != (entities.ResetCounts{}) {
+		t.Fatalf("second reset counts = %+v, want zero", second)
+	}
+}
+
+func TestResetDemoDisabledIsNotFound(t *testing.T) {
+	server := newTestServer(newFakeDocker(), newFakeVolumes())
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/v1/demo/reset", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST reset: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("reset without demo mode = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestResetDemoPartialFailureLeavesTheContainerForRetry(t *testing.T) {
+	docker := newFakeDocker()
+	volumes := newFakeVolumes()
+	server := newTestServerWithDemo(docker, volumes, true)
+	defer server.Close()
+
+	resp := postJSON(t, server.URL+"/v1/databases", map[string]any{
+		"id": "db-a", "size_gb": 1, "password": "pw",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	_ = resp.Body.Close()
+
+	docker.removeErr = errors.New("docker busy")
+	resp, err := http.Post(server.URL+"/v1/demo/reset", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST reset: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("failed reset = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+	if remaining, _ := docker.ListTenantContainers(context.Background()); len(remaining) != 1 {
+		t.Fatalf("containers after failed reset = %d, want 1", len(remaining))
+	}
+
+	docker.removeErr = nil
+	resp, err = http.Post(server.URL+"/v1/demo/reset", "application/json", nil)
+	if err != nil {
+		t.Fatalf("retry reset: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("retry reset = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if remaining, _ := docker.ListTenantContainers(context.Background()); len(remaining) != 0 {
+		t.Fatalf("containers after retry = %d, want 0", len(remaining))
+	}
 }

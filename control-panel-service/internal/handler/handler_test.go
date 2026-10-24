@@ -601,6 +601,9 @@ func TestCreateDatabaseWithPlanStoresPlanAndSnapshotsPrice(t *testing.T) {
 	server, client, db := newTestServer(t)
 	signUp(t, server, client, "plan-create@example.com")
 	insertNode(t, db, "node-plan-create")
+	if _, err := db.Exec(`UPDATE plans SET purchasable = TRUE WHERE slug = 'production'`); err != nil {
+		t.Fatalf("make production buyable for the plan snapshot test: %v", err)
+	}
 
 	planID := planIDBySlug(t, db, "production")
 

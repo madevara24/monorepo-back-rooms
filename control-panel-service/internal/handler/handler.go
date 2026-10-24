@@ -8,6 +8,7 @@ package handler
 
 import (
 	"database/sql"
+	"log"
 	"net/http"
 
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/pkg/credentials"
@@ -27,10 +28,15 @@ type Handler struct {
 	// Cipher encrypts tenant database passwords at rest. It is required
 	// by POST /api/databases.
 	Cipher *credentials.Cipher
+	// Demo is set only when demo mode is enabled. It supplies the public
+	// countdown, the admin trigger, and the maintenance gate.
+	Demo *usecase.DemoReset
+	// AccessLog receives one line per API request. Nil writes to stdout.
+	AccessLog *log.Logger
 }
 
 // NewMux builds the complete control-plane router.
-func NewMux(h *Handler) *http.ServeMux {
+func NewMux(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
@@ -67,5 +73,10 @@ func NewMux(h *Handler) *http.ServeMux {
 	mux.HandleFunc("POST /api/admin/plans", h.requireAdmin(h.handleAdminCreatePlan))
 	mux.HandleFunc("PATCH /api/admin/plans/{id}", h.requireAdmin(h.handleAdminUpdatePlan))
 
-	return mux
+	if h.Demo != nil {
+		mux.HandleFunc("GET /api/demo/status", h.handleDemoStatus)
+		mux.HandleFunc("POST /api/admin/demo/reset", h.requireAdmin(h.handleAdminDemoReset))
+	}
+
+	return AccessLog(h.AccessLog, mux)
 }

@@ -15,6 +15,30 @@ func scanNode(row rowScanner) (entities.Node, error) {
 	return n, err
 }
 
+// ListNodes returns every registered data-plane node, in id order. The
+// demo reset uses it to ask each agent to clean its own host.
+func ListNodes(ctx context.Context, db *sql.DB) ([]entities.Node, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT `+nodeColumns+`
+		FROM nodes
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []entities.Node{}
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // NodeByTokenHash looks up a node by the SHA-256 hash of its bearer
 // token. It returns sql.ErrNoRows if none matches.
 func NodeByTokenHash(ctx context.Context, db *sql.DB, tokenHash string) (entities.Node, error) {

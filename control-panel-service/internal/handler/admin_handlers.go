@@ -179,6 +179,14 @@ func (h *Handler) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Reque
 	}
 
 	created, password, err := h.provisionDatabase(r.Context(), req.UserID, req.Name, req.SizeGB, nil, int64(req.SizeGB)*defaultPricePerGBIDRMonth)
+	if errors.Is(err, errDemoMaintenance) {
+		writeMaintenance(w)
+		return
+	}
+	if errors.Is(err, repository.ErrDatabaseLimit) {
+		writeError(w, http.StatusConflict, "the user already holds two databases")
+		return
+	}
 	if isNotFound(err) {
 		writeError(w, http.StatusServiceUnavailable, "no node available")
 		return
@@ -205,6 +213,10 @@ func (h *Handler) handleAdminCreateDatabase(w http.ResponseWriter, r *http.Reque
 // job. There is no final snapshot: this is the same settled test-stage
 // decision as the tenant delete path.
 func (h *Handler) handleAdminDeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	if h.demoMaintenance(r.Context()) {
+		writeMaintenance(w)
+		return
+	}
 	d, err := repository.AdminForceDeleteDatabase(r.Context(), h.DB, r.PathValue("id"))
 	if isNotFound(err) {
 		writeError(w, http.StatusNotFound, "database not found")

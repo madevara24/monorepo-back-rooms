@@ -21,6 +21,7 @@ type Config struct {
 	Image       string
 	PortMin     int
 	PortMax     int
+	DemoMode    bool
 
 	TLSCert  string
 	TLSKey   string
@@ -64,6 +65,7 @@ func Load() (Config, error) {
 		Image:         getEnv("AGENT_IMAGE", "postgres:17"),
 		PortMin:       portMin,
 		PortMax:       portMax,
+		DemoMode:      os.Getenv("AGENT_DEMO_MODE") == "true",
 		TLSCert:       os.Getenv("AGENT_TLS_CERT"),
 		TLSKey:        os.Getenv("AGENT_TLS_KEY"),
 		ClientCA:      os.Getenv("AGENT_CLIENT_CA"),

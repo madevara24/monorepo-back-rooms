@@ -13,6 +13,9 @@ type Config struct {
 	PortMax     int
 	// Version is the build's commit SHA, reported by GET /v1/node.
 	Version string
+	// DemoMode enables the bulk reset endpoint. It is false on a real
+	// data plane.
+	DemoMode bool
 	// TenantTLSCertPath and TenantTLSKeyPath are host paths to the
 	// wildcard cert and key that every tenant container mounts
 	// read-only so Postgres can require TLS.
@@ -39,6 +42,13 @@ type ConnectionMetrics struct {
 	MaxConnections               int
 	SuperuserReservedConnections int
 	MemoryLimitBytes             int64
+}
+
+// ResetCounts is the agent's report after a bulk demo reset.
+type ResetCounts struct {
+	Containers int `json:"containers_deleted"`
+	Volumes    int `json:"volumes_deleted"`
+	Orphans    int `json:"orphans_deleted"`
 }
 
 // ContainerSpec describes the tenant container to create.

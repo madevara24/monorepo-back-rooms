@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/entities"
@@ -36,6 +37,11 @@ type Worker struct {
 	// delete job changes which databases are running. Nil disables this
 	// (tests that don't care about the routes file leave it unset).
 	Routes *Reconciler
+	// Gate is shared with the demo reset. A job holds the read lock while
+	// it runs; the reset takes the write lock and waits for it.
+	Gate *sync.RWMutex
+	// Paused stops the drain loop from claiming new jobs during a reset.
+	Paused func() bool
 }
 
 // reconcileRoutes reconciles the routes file if Routes is configured,
@@ -63,7 +69,7 @@ func (w *Worker) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		w.reclaim(ctx, lease)
-		for {
+		for !w.isPaused() {
 			found, err := w.ProcessOne(ctx)
 			if err != nil {
 				log.Printf("jobs: %v", err)
@@ -81,6 +87,10 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
+func (w *Worker) isPaused() bool {
+	return w.Paused != nil && w.Paused()
+}
+
 func (w *Worker) reclaim(ctx context.Context, lease time.Duration) {
 	n, err := repository.ReclaimStaleJobs(ctx, w.DB, lease)
 	if err != nil {
@@ -95,6 +105,11 @@ func (w *Worker) reclaim(ctx context.Context, lease time.Duration) {
 // ProcessOne claims and runs a single due job. The bool reports whether a
 // job was found, so Run can drain the queue before waiting on its ticker.
 func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
+	if w.Gate != nil {
+		w.Gate.RLock()
+		defer w.Gate.RUnlock()
+	}
+
 	job, err := repository.ClaimNextJob(ctx, w.DB)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil

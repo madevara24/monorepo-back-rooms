@@ -142,6 +142,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" bash -s <<SCRIPT
           docker rm -f mbr-router || true
           docker run -d --name mbr-router --restart unless-stopped \
+            --log-opt max-size=10m --log-opt max-file=3 \
             -p 5432:15432 \
             -p 127.0.0.1:9099:9099 \
             -v /etc/mbr/routes:/etc/mbr/routes:ro \

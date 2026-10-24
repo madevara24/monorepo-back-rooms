@@ -25,6 +25,14 @@ export type Plan = {
 	tagline: string;
 	badge: string;
 	sort_order: number;
+	purchasable: boolean;
+};
+
+export type DemoStatus = {
+	next_reset_at: string;
+	generation: number;
+	maintenance: boolean;
+	status: string;
 };
 
 export type AdminPlan = {
@@ -37,6 +45,7 @@ export type AdminPlan = {
 	badge: string;
 	sort_order: number;
 	active: boolean;
+	purchasable: boolean;
 	database_count: number;
 };
 

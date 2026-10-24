@@ -19,6 +19,9 @@ type Config struct {
 	AgentClientKeyB64  string
 	CookieSecure       bool
 	RoutesPath         string
+	DemoMode           bool
+	DemoAdminEmail     string
+	DemoAdminPassword  string
 }
 
 // Load reads Config from the environment, applying the same defaults
@@ -33,6 +36,9 @@ func Load() Config {
 		AgentClientKeyB64:  os.Getenv("AGENT_CLIENT_KEY_B64"),
 		CookieSecure:       os.Getenv("API_COOKIE_SECURE") == "true",
 		RoutesPath:         getEnv("MBR_ROUTES_PATH", defaultRoutesPath),
+		DemoMode:           os.Getenv("DEMO_MODE") == "true",
+		DemoAdminEmail:     os.Getenv("DEMO_ADMIN_EMAIL"),
+		DemoAdminPassword:  os.Getenv("DEMO_ADMIN_PASSWORD"),
 	}
 }
 

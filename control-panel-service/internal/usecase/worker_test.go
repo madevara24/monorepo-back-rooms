@@ -126,7 +126,7 @@ func TestProvisionJobSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-ab12", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-ab12", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestDeleteJobSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-cd34", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-cd34", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestProvisionJobRetriesOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-ef56", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-ef56", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestProvisionJobFailsPermanentlyAfterMaxAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-gh78", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-gh78", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestProvisionJobSkipsWhenStatusMovedOn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-super", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-super", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestProvisionAndDeleteReconcileRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-route1", nodeID, encrypted, nil, 50000)
+	created, err := repository.CreateDatabaseAndQueueProvision(ctx, db, user.ID, "demo", 5, "demo-route1", nodeID, encrypted, nil, 50000, 0)
 	if err != nil {
 		t.Fatalf("CreateDatabaseAndQueueProvision: %v", err)
 	}

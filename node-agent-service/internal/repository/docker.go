@@ -175,6 +175,13 @@ func buildContainerConfig(spec entities.ContainerSpec) (*dockercontainer.Config,
 		},
 	}
 	hostConfig := &dockercontainer.HostConfig{
+		LogConfig: dockercontainer.LogConfig{
+			Type: "json-file",
+			Config: map[string]string{
+				"max-size": "10m",
+				"max-file": "3",
+			},
+		},
 		Binds: []string{
 			spec.HostDataDir + ":/var/lib/postgresql/data",
 			spec.TLSCertPath + ":" + tenantTLSCertMountPath + ":ro",
