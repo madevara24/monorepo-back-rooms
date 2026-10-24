@@ -165,6 +165,9 @@ func TestAdminUpdatePlanPriceLeavesExistingDatabasePriceUnchanged(t *testing.T) 
 	signUp(t, server, client, "admin-plans-price@example.com")
 	promoteToAdmin(t, db, "admin-plans-price@example.com")
 	insertNode(t, db, "node-admin-plans-price")
+	if _, err := db.Exec(`UPDATE plans SET purchasable = TRUE WHERE slug = 'production'`); err != nil {
+		t.Fatalf("make production buyable for the price snapshot test: %v", err)
+	}
 
 	var userID string
 	if err := db.QueryRow(`SELECT id FROM users WHERE email = $1`, "admin-plans-price@example.com").Scan(&userID); err != nil {
