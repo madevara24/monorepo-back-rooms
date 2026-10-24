@@ -18,6 +18,10 @@ var ErrSlugTaken = errors.New("slug already taken")
 // row's current status, such as deleting an already-deleting database.
 var ErrInvalidState = errors.New("invalid state")
 
+// ErrDatabaseLimit is returned by CreateDatabaseAndQueueProvision when
+// the user already holds the maximum number of non-deleted databases.
+var ErrDatabaseLimit = errors.New("database limit reached")
+
 const databaseColumns = `id, user_id, name, size_gb, status, slug, node_id, host, port, password_encrypted, created_at, updated_at, plan_id, price_idr_month`
 
 type rowScanner interface {
@@ -76,12 +80,30 @@ func DatabaseByIDForUser(ctx context.Context, db *sql.DB, id, userID string) (en
 // an existing row, so the caller can generate a new one and retry. planID
 // is nil for a database created without picking a plan; priceIDRMonth is
 // the price snapshotted at creation time either way.
-func CreateDatabaseAndQueueProvision(ctx context.Context, db *sql.DB, userID, name string, sizeGB int, slug, nodeID string, passwordEncrypted []byte, planID *string, priceIDRMonth int64) (entities.Database, error) {
+func CreateDatabaseAndQueueProvision(ctx context.Context, db *sql.DB, userID, name string, sizeGB int, slug, nodeID string, passwordEncrypted []byte, planID *string, priceIDRMonth int64, maxDatabases int) (entities.Database, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return entities.Database{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if maxDatabases > 0 {
+		// Locking the user row serializes creates for one account, so two
+		// concurrent requests cannot both read "one database" and insert.
+		var locked string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&locked); err != nil {
+			return entities.Database{}, err
+		}
+		var count int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM databases WHERE user_id = $1 AND status <> 'deleted'
+		`, userID).Scan(&count); err != nil {
+			return entities.Database{}, err
+		}
+		if count >= maxDatabases {
+			return entities.Database{}, ErrDatabaseLimit
+		}
+	}
 
 	row := tx.QueryRowContext(ctx, `
 		INSERT INTO databases (user_id, name, size_gb, status, slug, node_id, password_encrypted, plan_id, price_idr_month)

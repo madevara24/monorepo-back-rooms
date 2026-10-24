@@ -108,9 +108,15 @@ type createDatabaseResponse struct {
 // random slug after a collision, before giving up.
 const maxSlugAttempts = 5
 
+// maxDemoDatabases is the per-account product guard for the demo.
+const maxDemoDatabases = 2
+
 // errNoSlugAvailable is returned by provisionDatabase when every slug
 // attempt collided.
 var errNoSlugAvailable = errors.New("could not generate a unique slug")
+
+// errDemoMaintenance is returned while a demo reset is running.
+var errDemoMaintenance = errors.New("demo is resetting")
 
 // provisionDatabase is the one provisioning path shared by the tenant's
 // POST /api/databases and the admin's POST /api/admin/databases: it picks
@@ -122,6 +128,10 @@ var errNoSlugAvailable = errors.New("could not generate a unique slug")
 // repository.AnyAvailableNode produced (sql.ErrNoRows when no node is
 // free) so the caller can map it to the right status code.
 func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, sizeGB int, planID *string, priceIDRMonth int64) (entities.Database, string, error) {
+	if h.demoMaintenance(ctx) {
+		return entities.Database{}, "", errDemoMaintenance
+	}
+
 	node, err := repository.AnyAvailableNode(ctx, h.DB)
 	if err != nil {
 		return entities.Database{}, "", err
@@ -136,6 +146,11 @@ func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, si
 		return entities.Database{}, "", err
 	}
 
+	maxDatabases := 0
+	if h.Demo != nil {
+		maxDatabases = maxDemoDatabases
+	}
+
 	var created entities.Database
 	for attempt := 0; attempt < maxSlugAttempts; attempt++ {
 		slug, err := newSlug(name)
@@ -143,7 +158,7 @@ func (h *Handler) provisionDatabase(ctx context.Context, userID, name string, si
 			return entities.Database{}, "", err
 		}
 
-		created, err = repository.CreateDatabaseAndQueueProvision(ctx, h.DB, userID, name, sizeGB, slug, node.ID, encrypted, planID, priceIDRMonth)
+		created, err = repository.CreateDatabaseAndQueueProvision(ctx, h.DB, userID, name, sizeGB, slug, node.ID, encrypted, planID, priceIDRMonth, maxDatabases)
 		if errors.Is(err, repository.ErrSlugTaken) {
 			continue
 		}
@@ -175,22 +190,25 @@ func validateCreateDatabaseRequest(name string, sizeGB int) string {
 // plan_id, the plan must exist and be active, size_gb comes from the
 // plan, and a size_gb the caller also sent must agree with it — this
 // never silently picks one over the other.
-func (h *Handler) resolveDatabasePlan(ctx context.Context, req createDatabaseRequest) (sizeGB int, planID *string, priceIDRMonth int64, errMsg string) {
+func (h *Handler) resolveDatabasePlan(ctx context.Context, req createDatabaseRequest) (sizeGB int, planID *string, priceIDRMonth int64, errMsg string, errStatus int) {
 	if req.PlanID == nil {
 		if req.SizeGB == nil || *req.SizeGB < 1 || *req.SizeGB > 20 {
-			return 0, nil, 0, "size_gb must be between 1 and 20"
+			return 0, nil, 0, "size_gb must be between 1 and 20", http.StatusBadRequest
 		}
-		return *req.SizeGB, nil, int64(*req.SizeGB) * defaultPricePerGBIDRMonth, ""
+		return *req.SizeGB, nil, int64(*req.SizeGB) * defaultPricePerGBIDRMonth, "", 0
 	}
 
 	plan, err := repository.GetPlanByID(ctx, h.DB, *req.PlanID)
 	if err != nil || !plan.Active {
-		return 0, nil, 0, "plan is not available"
+		return 0, nil, 0, "plan is not available", http.StatusBadRequest
+	}
+	if !plan.Purchasable {
+		return 0, nil, 0, "plan is sold out", http.StatusConflict
 	}
 	if req.SizeGB != nil && *req.SizeGB != plan.SizeGB {
-		return 0, nil, 0, "size_gb does not match plan"
+		return 0, nil, 0, "size_gb does not match plan", http.StatusBadRequest
 	}
-	return plan.SizeGB, &plan.ID, plan.PriceIDRMonth, ""
+	return plan.SizeGB, &plan.ID, plan.PriceIDRMonth, "", 0
 }
 
 // handleCreateDatabase provisions a new tenant database through
@@ -208,13 +226,24 @@ func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sizeGB, planID, priceIDRMonth, msg := h.resolveDatabasePlan(r.Context(), req)
+	sizeGB, planID, priceIDRMonth, msg, errStatus := h.resolveDatabasePlan(r.Context(), req)
 	if msg != "" {
-		writeError(w, http.StatusBadRequest, msg)
+		if errStatus == 0 {
+			errStatus = http.StatusBadRequest
+		}
+		writeError(w, errStatus, msg)
 		return
 	}
 
 	created, password, err := h.provisionDatabase(r.Context(), user.ID, req.Name, sizeGB, planID, priceIDRMonth)
+	if errors.Is(err, errDemoMaintenance) {
+		writeMaintenance(w)
+		return
+	}
+	if errors.Is(err, repository.ErrDatabaseLimit) {
+		writeError(w, http.StatusConflict, "you can hold at most two databases")
+		return
+	}
 	if isNotFound(err) {
 		writeError(w, http.StatusServiceUnavailable, "no node available")
 		return
@@ -240,6 +269,10 @@ func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 // "delete" job that will remove its container and volume. There is no
 // final snapshot: this is a settled test-stage decision.
 func (h *Handler) handleDeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	if h.demoMaintenance(r.Context()) {
+		writeMaintenance(w)
+		return
+	}
 	user := userFromContext(r)
 
 	d, err := repository.SetDatabaseDeletingAndQueueDelete(r.Context(), h.DB, r.PathValue("id"), user.ID)

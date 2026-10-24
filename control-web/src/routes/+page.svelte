@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { Plan } from '$lib/api';
 	import Button from '$lib/components/Button.svelte';
+	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
@@ -129,22 +130,28 @@
 								<li>{bullet}</li>
 							{/each}
 						</ul>
-						<a href={buyHref(plan.slug)}>
-							<Button class="w-full">Get {plan.name}</Button>
-						</a>
+						{#if plan.purchasable}
+							<a href={buyHref(plan.slug)}>
+								<Button class="w-full">Get {plan.name}</Button>
+							</a>
+						{:else}
+							<Button class="w-full" disabled>Sold out</Button>
+						{/if}
 					</div>
 				{/each}
 			</div>
 		{/if}
 
 		<p class="text-xs text-muted">
-			Monthly prices per package. Sizes run 1 to 20 GB. Payment is mocked in this build — no
-			card is charged.
+			Monthly prices per package. The 1 GB and 5 GB packages are available; the 10 GB and 20 GB
+			packages are sold out. Payment is mocked in this build.
 		</p>
 	</section>
 
 	<footer class="mt-auto flex flex-wrap items-center gap-3 text-xs text-muted">
 		<span>API {apiState === 'checking' ? 'checking…' : apiState}</span>
+		<DemoCountdown />
+		<a href="/demo" class="underline">What is this?</a>
 		<a href="/about" class="underline">About</a>
 	</footer>
 </div>

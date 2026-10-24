@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,9 @@ type VolumeManager interface {
 	// Remove unmounts and deletes the volume for id. It is a no-op if
 	// the volume does not exist.
 	Remove(id string) error
+	// CleanOrphans removes image files and mount points whose IDs are
+	// not in keep. The demo reset calls it with an empty keep set.
+	CleanOrphans(ctx context.Context, keep map[string]bool) (int, error)
 }
 
 // loopVolumeManager implements VolumeManager with a sparse ext4 image
@@ -96,6 +100,46 @@ func (m *loopVolumeManager) Remove(id string) error {
 		return fmt.Errorf("remove image: %w", err)
 	}
 	return nil
+}
+
+// CleanOrphans removes every image and mount whose ID is not in keep.
+// It reads the agent's own directories, so a failed create that left a
+// loop file does not survive a demo reset.
+func (m *loopVolumeManager) CleanOrphans(ctx context.Context, keep map[string]bool) (int, error) {
+	ids := map[string]bool{}
+
+	images, err := os.ReadDir(filepath.Join(m.dataDir, "images"))
+	if err != nil && !os.IsNotExist(err) {
+		return 0, fmt.Errorf("read images: %w", err)
+	}
+	for _, entry := range images {
+		if name := entry.Name(); strings.HasSuffix(name, ".img") {
+			ids[strings.TrimSuffix(name, ".img")] = true
+		}
+	}
+
+	mounts, err := os.ReadDir(filepath.Join(m.dataDir, "mounts"))
+	if err != nil && !os.IsNotExist(err) {
+		return 0, fmt.Errorf("read mounts: %w", err)
+	}
+	for _, entry := range mounts {
+		ids[entry.Name()] = true
+	}
+
+	removed := 0
+	for id := range ids {
+		if keep[id] {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return removed, err
+		}
+		if err := m.Remove(id); err != nil {
+			return removed, fmt.Errorf("remove orphan %s: %w", id, err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 func createExt4Image(imagePath string, sizeGB int) error {

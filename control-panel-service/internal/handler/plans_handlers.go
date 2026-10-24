@@ -17,6 +17,7 @@ type planResponse struct {
 	Tagline       string `json:"tagline"`
 	Badge         string `json:"badge"`
 	SortOrder     int    `json:"sort_order"`
+	Purchasable   bool   `json:"purchasable"`
 }
 
 func toPlanResponse(p entities.Plan) planResponse {
@@ -29,6 +30,7 @@ func toPlanResponse(p entities.Plan) planResponse {
 		Tagline:       p.Tagline,
 		Badge:         p.Badge,
 		SortOrder:     p.SortOrder,
+		Purchasable:   p.Purchasable,
 	}
 }
 

@@ -61,6 +61,28 @@ func NewWithHTTPClient(httpClient *http.Client) *Client {
 	return &Client{httpClient: httpClient}
 }
 
+// ResetCounts is the agent's report after a bulk demo reset.
+type ResetCounts struct {
+	Containers int `json:"containers_deleted"`
+	Volumes    int `json:"volumes_deleted"`
+	Orphans    int `json:"orphans_deleted"`
+}
+
+// ResetDemo asks the agent to remove every tenant container, volume, and
+// orphan on its host. It is a no-op on an already-clean host.
+func (c *Client) ResetDemo(ctx context.Context, address string) (ResetCounts, error) {
+	var out ResetCounts
+	err := c.do(ctx, http.MethodPost, address+"/v1/demo/reset", nil, &out)
+	return out, err
+}
+
+// ListDatabases reads the agent's actual tenant container list.
+func (c *Client) ListDatabases(ctx context.Context, address string) ([]Database, error) {
+	var out []Database
+	err := c.do(ctx, http.MethodGet, address+"/v1/databases", nil, &out)
+	return out, err
+}
+
 // CreateDatabase calls the agent's POST /v1/databases, asking it to
 // provision (or, if it already exists, confirm) a tenant container.
 // address is the node's address as stored in nodes.address.

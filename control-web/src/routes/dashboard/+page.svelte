@@ -7,6 +7,7 @@
 		postJSON,
 		type CreateDatabaseResult,
 		type Database,
+		type DemoStatus,
 		type Plan,
 		type User
 	} from '$lib/api';
@@ -22,12 +23,17 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 
 	let user: User | null = $state(null);
 	let databases: Database[] = $state([]);
 	let loading: boolean = $state(true);
 	let error: string = $state('');
 	let endpoint: string = $state('/api');
+
+	let demoStatus = $state<DemoStatus | null>(null);
+	let demoNow: number = $state(Date.now());
+	let demoTimers: ReturnType<typeof setInterval>[] = [];
 
 	let createName: string = $state('');
 	let plans: Plan[] = $state([]);
@@ -55,6 +61,43 @@
 	const jdbcURL = $derived(createdDatabase?.status === 'running' ? createdJDBCURL : '');
 	const databaseCount = $derived(databases.length);
 	const provisionedGB = $derived(databases.reduce((sum, d) => sum + d.size_gb, 0));
+	const maintenance = $derived(demoStatus?.maintenance ?? false);
+	const resetInSeconds = $derived(
+		demoStatus
+			? Math.max(0, Math.floor((new Date(demoStatus.next_reset_at).getTime() - demoNow) / 1000))
+			: null
+	);
+	const resetWarning = $derived(
+		resetInSeconds !== null && resetInSeconds > 0 && resetInSeconds <= 120
+	);
+	const atLimit = $derived(databases.length >= 2);
+	const purchasablePlans = $derived(plans.filter((p) => p.purchasable));
+	const nextResetLabel = $derived(
+		demoStatus
+			? new Date(demoStatus.next_reset_at).toLocaleTimeString('en-GB', {
+					hour: '2-digit',
+					minute: '2-digit',
+					timeZone: 'Asia/Jakarta'
+				})
+			: ''
+	);
+
+	async function loadDemoStatus() {
+		try {
+			const res = await fetch('/api/demo/status');
+			demoStatus = res.ok ? await res.json() : null;
+		} catch {
+			demoStatus = null;
+		}
+	}
+
+	function handleUnauthorized(res: Response): boolean {
+		if (res.status === 401) {
+			void goto('/login?reset=1');
+			return true;
+		}
+		return false;
+	}
 
 	function pollDatabase(id: string) {
 		if (pollTimers.has(id)) return;
@@ -62,6 +105,7 @@
 			pollTimers.delete(id);
 			const res = await fetch(`/api/databases/${id}`);
 			if (!res.ok) {
+				if (handleUnauthorized(res)) return;
 				databases = databases.filter((d) => d.id !== id);
 				return;
 			}
@@ -75,6 +119,7 @@
 	async function loadDatabases() {
 		const res = await fetch('/api/databases');
 		if (!res.ok) {
+			if (handleUnauthorized(res)) return;
 			error = `could not load databases (${res.status})`;
 			return;
 		}
@@ -89,8 +134,10 @@
 		if (!res.ok) return;
 		plans = await res.json();
 		const wantedSlug = $page.url.searchParams.get('plan');
-		const wanted = wantedSlug ? plans.find((p) => p.slug === wantedSlug) : null;
-		selectedPlanId = (wanted ?? plans[0])?.id ?? '';
+		const wanted = wantedSlug
+			? plans.find((p) => p.slug === wantedSlug && p.purchasable)
+			: null;
+		selectedPlanId = (wanted ?? plans.find((p) => p.purchasable))?.id ?? '';
 	}
 
 	function packageLabel(db: Database): string {
@@ -107,6 +154,9 @@
 				return;
 			}
 			user = await meRes.json();
+			await loadDemoStatus();
+			demoTimers.push(setInterval(() => (demoNow = Date.now()), 1000));
+			demoTimers.push(setInterval(loadDemoStatus, 15000));
 			await loadPlans();
 			await loadDatabases();
 		} finally {
@@ -117,6 +167,8 @@
 	onDestroy(() => {
 		for (const timer of pollTimers.values()) clearTimeout(timer);
 		pollTimers.clear();
+		for (const timer of demoTimers) clearInterval(timer);
+		demoTimers = [];
 	});
 
 	async function handleLogout() {
@@ -131,6 +183,12 @@
 		try {
 			const res = await postJSON('/api/databases', { name: createName, plan_id: selectedPlanId });
 			if (!res.ok) {
+				if (handleUnauthorized(res)) return;
+				if (res.status === 503) {
+					await loadDemoStatus();
+					createError = 'The demo is resetting. Try again shortly.';
+					return;
+				}
 				createError = await errorMessage(res);
 				return;
 			}
@@ -174,6 +232,7 @@
 		try {
 			const res = await fetch(`/api/databases/${db.id}`, { method: 'DELETE' });
 			if (!res.ok) {
+				if (handleUnauthorized(res)) return;
 				pushToast('error', await errorMessage(res));
 				return;
 			}
@@ -200,6 +259,9 @@
 	onLogout={handleLogout}
 />
 <StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
+<div class="mx-auto max-w-3xl px-4 pt-3">
+	<DemoCountdown />
+</div>
 
 <main class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
 	{#if loading}
@@ -208,6 +270,14 @@
 		<p class="text-sm text-error">{error}</p>
 	{:else}
 		<Panel title="New database">
+			<p class="text-xs text-muted">
+				{databases.length} of 2 databases. Everything here is deleted at the next reset.
+			</p>
+			{#if maintenance}
+				<p class="text-sm text-warning">The demo is resetting. The form unlocks shortly.</p>
+			{:else if resetWarning}
+				<p class="text-sm text-warning">The demo resets in less than two minutes.</p>
+			{/if}
 			<form class="flex flex-wrap items-end gap-3" onsubmit={handleCreate}>
 				<Field label="Name" id="create-name">
 					<Input id="create-name" type="text" bind:value={createName} required />
@@ -223,7 +293,9 @@
 							class="h-11 w-full min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-text focus-visible:border-accent"
 						>
 							{#each plans as plan (plan.id)}
-								<option value={plan.id}>{plan.name} — {plan.size_gb} GB</option>
+								<option value={plan.id} disabled={!plan.purchasable}>
+									{plan.name} · {plan.size_gb} GB{plan.purchasable ? '' : ' (sold out)'}
+								</option>
 							{/each}
 						</select>
 					</Field>
@@ -233,7 +305,12 @@
 						{/if}
 					</p>
 				{/if}
-				<Button type="submit" disabled={creating || plans.length === 0}>Create</Button>
+				<Button
+					type="submit"
+					disabled={creating || maintenance || atLimit || purchasablePlans.length === 0}
+				>
+					Create
+				</Button>
 			</form>
 
 			{#if createError}
@@ -243,6 +320,9 @@
 			{#if createdID}
 				<div class="flex flex-col gap-2 rounded-md border border-warning bg-bg p-3 text-sm">
 					<p>Database created. This password is shown once and will not be shown again.</p>
+					{#if nextResetLabel}
+						<p class="text-xs text-muted">This password works until {nextResetLabel} GMT+7.</p>
+					{/if}
 					<CopyField label="Host" value={createdHost} />
 					<CopyField label="Port" value={String(createdPort ?? '')} />
 					<CopyField label="Database" value={createdDatabaseName} />

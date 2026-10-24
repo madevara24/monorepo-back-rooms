@@ -42,6 +42,9 @@ func main() {
 	go c.Worker.Run(ctx)
 	go c.Reconciler.Run(ctx, routeReconcileInterval)
 	go c.MetricsRetention.Run(ctx, metricsRetentionInterval)
+	if c.Demo != nil {
+		go c.Demo.Run(ctx)
+	}
 
 	server := &http.Server{Addr: cfg.Addr, Handler: c.Mux}
 	go func() {

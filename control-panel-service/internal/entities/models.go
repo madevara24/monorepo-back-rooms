@@ -12,6 +12,7 @@ type User struct {
 	Email        string
 	PasswordHash string
 	IsAdmin      bool
+	IsSeed       bool
 	CreatedAt    time.Time
 }
 
@@ -61,9 +62,36 @@ type Plan struct {
 	Badge         string
 	SortOrder     int
 	Active        bool
+	Purchasable   bool
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	DatabaseCount int
+}
+
+// DemoState is the singleton row that drives the demo reset: the
+// current generation, whether the demo is in maintenance, and the next
+// wall-clock boundary.
+type DemoState struct {
+	Generation  int64
+	Status      string
+	Maintenance bool
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
+	NextResetAt time.Time
+	LastError   *string
+}
+
+// ResetRun is one demo reset attempt: what triggered it, how long it
+// took, and what the agent reported deleting.
+type ResetRun struct {
+	ID                string
+	Trigger           string
+	StartedAt         time.Time
+	FinishedAt        *time.Time
+	ContainersDeleted int
+	VolumesDeleted    int
+	OrphansDeleted    int
+	Error             *string
 }
 
 // Node is a registered mbr-node agent. TokenHash is the SHA-256 hash of

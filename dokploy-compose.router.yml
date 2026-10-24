@@ -8,6 +8,11 @@ services:
       ROUTER_ADDR: ":15432"
       ROUTER_HEALTH_ADDR: ":9099"
       MBR_ROUTES_PATH: "/etc/mbr/routes/mbr-routes.map"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - /etc/mbr/routes:/etc/mbr/routes:ro
     ports:

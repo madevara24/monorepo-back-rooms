@@ -6,6 +6,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -147,6 +148,53 @@ func (n *Node) CreateDatabase(ctx context.Context, id string, sizeGB int, passwo
 	}
 
 	return container, true, nil
+}
+
+// ResetDemo removes every tenant container and loop volume on this host,
+// then sweeps orphan images and mounts. It is idempotent and is only
+// reachable when demo mode is enabled.
+func (n *Node) ResetDemo(ctx context.Context) (entities.ResetCounts, error) {
+	n.createMu.Lock()
+	defer n.createMu.Unlock()
+
+	containers, err := n.Docker.ListTenantContainers(ctx)
+	if err != nil {
+		return entities.ResetCounts{}, fmt.Errorf("list tenant containers: %w", err)
+	}
+
+	var counts entities.ResetCounts
+	var errs []error
+	for _, c := range containers {
+		if err := n.Docker.RemoveTenantContainer(ctx, c.ContainerID); err != nil {
+			errs = append(errs, fmt.Errorf("remove container %s: %w", c.DatabaseID, err))
+			continue
+		}
+		counts.Containers++
+		if err := n.Volumes.Remove(c.DatabaseID); err != nil {
+			errs = append(errs, fmt.Errorf("remove volume %s: %w", c.DatabaseID, err))
+			continue
+		}
+		counts.Volumes++
+	}
+
+	remaining, err := n.Docker.ListTenantContainers(ctx)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("verify containers: %w", err))
+	}
+	keep := make(map[string]bool, len(remaining))
+	for _, c := range remaining {
+		keep[c.DatabaseID] = true
+	}
+	orphans, err := n.Volumes.CleanOrphans(ctx, keep)
+	counts.Orphans = orphans
+	if err != nil {
+		errs = append(errs, fmt.Errorf("clean orphan volumes: %w", err))
+	}
+	if len(remaining) > 0 {
+		errs = append(errs, fmt.Errorf("%d tenant container(s) remain", len(remaining)))
+	}
+
+	return counts, errors.Join(errs...)
 }
 
 // DeleteDatabase removes a tenant container and its volume. It is a

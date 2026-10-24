@@ -12,6 +12,14 @@ services:
       AGENT_CA_B64: ${AGENT_CA_B64}
       AGENT_CLIENT_CERT_B64: ${AGENT_CLIENT_CERT_B64}
       AGENT_CLIENT_KEY_B64: ${AGENT_CLIENT_KEY_B64}
+      DEMO_MODE: ${DEMO_MODE:-false}
+      DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - /etc/mbr/routes:/etc/mbr/routes
     depends_on:
@@ -35,6 +43,11 @@ services:
       args:
         PUBLIC_DOKPLOY_URL: ${PUBLIC_DOKPLOY_URL}
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - dokploy-network
     labels:
@@ -53,6 +66,11 @@ services:
       POSTGRES_USER: mbr
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: mbr
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - mbr-control-db-data:/var/lib/postgresql/data
     networks:
