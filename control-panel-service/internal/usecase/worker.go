@@ -69,10 +69,7 @@ func (w *Worker) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		w.reclaim(ctx, lease)
-		for {
-			if w.Paused != nil && w.Paused() {
-				break
-			}
+		for !w.isPaused() {
 			found, err := w.ProcessOne(ctx)
 			if err != nil {
 				log.Printf("jobs: %v", err)
@@ -88,6 +85,10 @@ func (w *Worker) Run(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func (w *Worker) isPaused() bool {
+	return w.Paused != nil && w.Paused()
 }
 
 func (w *Worker) reclaim(ctx context.Context, lease time.Duration) {

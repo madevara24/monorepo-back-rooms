@@ -30,7 +30,7 @@ func NewMux(n *usecase.Node) *http.ServeMux {
 	mux.HandleFunc("DELETE /v1/databases/{id}", h.handleDeleteDatabase)
 	mux.HandleFunc("GET /v1/databases/{id}/snapshots", h.handleSnapshotsGated)
 	mux.HandleFunc("POST /v1/databases/{id}/snapshots", h.handleSnapshotsGated)
-	if n.Config.DemoMode {
+	if n.DemoMode {
 		mux.HandleFunc("POST /v1/demo/reset", h.handleResetDemo)
 	}
 
