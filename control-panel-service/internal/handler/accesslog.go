@@ -27,9 +27,9 @@ func AccessLog(logger *log.Logger, next http.Handler) http.Handler {
 
 		route := r.Pattern
 		if route == "" {
-			route = r.URL.Path
+			route = r.Method + " " + r.URL.Path
 		}
-		logger.Printf("%s %s %d %s", r.Method, route, sw.status, time.Since(start).Round(time.Millisecond))
+		logger.Printf("%s %d %s", route, sw.status, time.Since(start).Round(time.Millisecond))
 	})
 }
 
