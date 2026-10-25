@@ -131,11 +131,11 @@
 							{/each}
 						</ul>
 						{#if plan.purchasable}
-							<a href={buyHref(plan.slug)}>
+							<a href={buyHref(plan.slug)} class="mt-auto">
 								<Button class="w-full">Get {plan.name}</Button>
 							</a>
 						{:else}
-							<Button class="w-full" disabled>Sold out</Button>
+							<Button class="mt-auto w-full" disabled>Sold out</Button>
 						{/if}
 					</div>
 				{/each}
