@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { page } from '$app/stores';
 	import {
 		errorMessage,
@@ -12,6 +12,7 @@
 		type User
 	} from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
+	import { dashboardTour } from '$lib/tour.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import StatusRail from '$lib/components/StatusRail.svelte';
 	import Panel from '$lib/components/Panel.svelte';
@@ -54,6 +55,7 @@
 	let actionTarget: string = $state('');
 
 	const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	let capturedTour: string | null = null;
 
 	const selectedPlan = $derived(plans.find((p) => p.id === selectedPlanId) ?? null);
 	const createdDatabase = $derived(databases.find((d) => d.id === createdID) ?? null);
@@ -85,19 +87,27 @@
 	async function loadDemoStatus() {
 		try {
 			const res = await fetch('/api/demo/status');
-			demoStatus = res.ok ? await res.json() : null;
+			if (!res.ok) {
+				if (requireAuth(res)) return;
+				demoStatus = null;
+				return;
+			}
+			demoStatus = await res.json();
 		} catch {
 			demoStatus = null;
 		}
 	}
 
-	function handleUnauthorized(res: Response): boolean {
-		if (res.status === 401) {
-			void goto('/login?reset=1');
-			return true;
-		}
-		return false;
+	function requireAuth(res: Response): boolean {
+		if (res.status !== 401) return false;
+		dashboardTour.clear();
+		void goto('/login?reset=1&tour=1');
+		return true;
 	}
+
+	$effect(() => {
+		if (maintenance) dashboardTour.pause();
+	});
 
 	function pollDatabase(id: string) {
 		if (pollTimers.has(id)) return;
@@ -105,7 +115,7 @@
 			pollTimers.delete(id);
 			const res = await fetch(`/api/databases/${id}`);
 			if (!res.ok) {
-				if (handleUnauthorized(res)) return;
+				if (requireAuth(res)) return;
 				databases = databases.filter((d) => d.id !== id);
 				return;
 			}
@@ -119,7 +129,7 @@
 	async function loadDatabases() {
 		const res = await fetch('/api/databases');
 		if (!res.ok) {
-			if (handleUnauthorized(res)) return;
+			if (requireAuth(res)) return;
 			error = `could not load databases (${res.status})`;
 			return;
 		}
@@ -131,7 +141,10 @@
 
 	async function loadPlans() {
 		const res = await fetch('/api/plans');
-		if (!res.ok) return;
+		if (!res.ok) {
+			requireAuth(res);
+			return;
+		}
 		plans = await res.json();
 		const wantedSlug = $page.url.searchParams.get('plan');
 		const wanted = wantedSlug
@@ -147,10 +160,19 @@
 
 	onMount(async () => {
 		endpoint = `${location.host}/api`;
+
+		const params = new URLSearchParams(location.search);
+		capturedTour = params.get('tour');
+		if (params.has('tour')) {
+			params.delete('tour');
+			const query = params.toString();
+			replaceState(`${location.pathname}${query ? `?${query}` : ''}`, {});
+		}
+
 		try {
 			const meRes = await fetch('/api/me');
 			if (!meRes.ok) {
-				await goto('/login');
+				if (!requireAuth(meRes)) await goto('/login');
 				return;
 			}
 			user = await meRes.json();
@@ -161,6 +183,9 @@
 			await loadDatabases();
 		} finally {
 			loading = false;
+			if (user && !error && capturedTour === '1') {
+				dashboardTour.start();
+			}
 		}
 	});
 
@@ -183,7 +208,7 @@
 		try {
 			const res = await postJSON('/api/databases', { name: createName, plan_id: selectedPlanId });
 			if (!res.ok) {
-				if (handleUnauthorized(res)) return;
+				if (requireAuth(res)) return;
 				if (res.status === 503) {
 					await loadDemoStatus();
 					createError = 'The demo is resetting. Try again shortly.';
@@ -232,7 +257,7 @@
 		try {
 			const res = await fetch(`/api/databases/${db.id}`, { method: 'DELETE' });
 			if (!res.ok) {
-				if (handleUnauthorized(res)) return;
+				if (requireAuth(res)) return;
 				pushToast('error', await errorMessage(res));
 				return;
 			}
@@ -258,9 +283,11 @@
 	userEmail={user?.email}
 	onLogout={handleLogout}
 />
-<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
-<div class="mx-auto max-w-3xl px-4 pt-3">
-	<DemoCountdown />
+<div data-tour="dashboard-status">
+	<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
+	<div class="mx-auto max-w-3xl px-4 pt-3">
+		<DemoCountdown />
+	</div>
 </div>
 
 <main class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
@@ -269,7 +296,7 @@
 	{:else if error}
 		<p class="text-sm text-error">{error}</p>
 	{:else}
-		<Panel title="New database">
+		<Panel title="New database" tourId="create-panel">
 			<p class="text-xs text-muted">
 				{databases.length} of 2 databases. Everything here is deleted at the next reset.
 			</p>
@@ -278,7 +305,7 @@
 			{:else if resetWarning}
 				<p class="text-sm text-warning">The demo resets in less than two minutes.</p>
 			{/if}
-			<form class="flex flex-wrap items-end gap-3" onsubmit={handleCreate}>
+			<form class="flex flex-wrap items-end gap-3" data-tour="create-form" onsubmit={handleCreate}>
 				<Field label="Name" id="create-name">
 					<Input id="create-name" type="text" bind:value={createName} required />
 				</Field>

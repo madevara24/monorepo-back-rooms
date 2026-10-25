@@ -1,9 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, getContext } from 'svelte';
 	import type { Plan } from '$lib/api';
 	import Button from '$lib/components/Button.svelte';
 	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import { storefrontTour } from '$lib/tour.svelte';
+
+	const prompt = getContext<{ show: () => void; hide: () => void }>('mbr-prompt');
 
 	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
 	let signedIn: boolean = $state(false);
@@ -17,6 +20,13 @@
 		'Connection string and JDBC URL',
 		'Fixed size, enforced by the volume'
 	];
+
+	const tourActive = $derived(storefrontTour.step !== null);
+
+	function withTour(href: string): string {
+		if (!tourActive) return href;
+		return `${href}${href.includes('?') ? '&' : '?'}tour=1`;
+	}
 
 	async function checkHealth() {
 		try {
@@ -42,7 +52,7 @@
 
 	function buyHref(slug: string) {
 		const path = signedIn ? '/dashboard' : '/signup';
-		return `${path}?plan=${encodeURIComponent(slug)}`;
+		return withTour(`${path}?plan=${encodeURIComponent(slug)}`);
 	}
 
 	onMount(async () => {
@@ -57,6 +67,8 @@
 			}
 		} catch {
 			signedIn = false;
+		} finally {
+			if (!signedIn) prompt?.show();
 		}
 	});
 </script>
@@ -71,26 +83,26 @@
 		<ThemeToggle />
 	</header>
 
-	<section class="flex flex-col gap-3">
+	<section class="flex flex-col gap-3" data-tour="hero">
 		<h1 class="text-3xl font-semibold text-text">Postgres, by the gigabyte.</h1>
 		<p class="text-muted">
 			Pick a package and get a running Postgres with TLS, a public hostname, and a connection
 			string.
 		</p>
-		<nav class="flex flex-wrap gap-3">
+		<nav class="flex flex-wrap gap-3" data-tour="account-cta">
 			{#if signedIn}
-				<a href="/dashboard"><Button>Go to dashboard</Button></a>
+				<a href={withTour('/dashboard')}><Button>Go to dashboard</Button></a>
 				{#if isAdmin}
 					<a href="/admin"><Button variant="secondary">Admin</Button></a>
 				{/if}
 			{:else}
-				<a href="/signup"><Button>Create an account</Button></a>
-				<a href="/login"><Button variant="secondary">Log in</Button></a>
+				<a href={withTour('/signup')}><Button>Create an account</Button></a>
+				<a href={withTour('/login')}><Button variant="secondary">Log in</Button></a>
 			{/if}
 		</nav>
 	</section>
 
-	<section class="flex flex-col gap-4">
+	<section class="flex flex-col gap-4" data-tour="packages">
 		<div>
 			<h2 class="text-xl font-semibold text-text">Packages</h2>
 			<p class="text-muted">One container per database. Fixed size, enforced by the volume.</p>
