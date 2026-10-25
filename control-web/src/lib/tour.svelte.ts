@@ -11,16 +11,19 @@ export type Tour = {
 	readonly step: Step | null;
 	readonly isLast: boolean;
 	readonly isDone: boolean;
+	readonly isFinished: boolean;
 	start: () => void;
 	next: () => void;
 	finish: () => void;
 	skip: () => void;
 	pause: () => void;
+	resume: () => void;
 	hydrate: () => void;
 	clear: () => void;
 };
 
-const DONE = 'done';
+const FINISHED = 'finished';
+const SKIPPED = 'skipped';
 
 function createTour(track: string, steps: Step[]): Tour {
 	const storageKey = `mbr-tour-v1:${track}:step`;
@@ -32,7 +35,8 @@ function createTour(track: string, steps: Step[]): Tour {
 	const index = $derived(stepId ? steps.findIndex((s) => s.id === stepId) : -1);
 	const step = $derived(activeFlag && index >= 0 ? steps[index] : null);
 	const isLast = $derived(index === steps.length - 1);
-	const isDone = $derived(stepId === DONE);
+	const isDone = $derived(stepId === FINISHED || stepId === SKIPPED);
+	const isFinished = $derived(stepId === FINISHED);
 
 	function persist() {
 		if (typeof sessionStorage === 'undefined') return;
@@ -57,13 +61,13 @@ function createTour(track: string, steps: Step[]): Tour {
 	}
 
 	function finish() {
-		stepId = DONE;
+		stepId = FINISHED;
 		activeFlag = false;
 		persist();
 	}
 
 	function skip() {
-		stepId = DONE;
+		stepId = SKIPPED;
 		activeFlag = false;
 		persist();
 	}
@@ -72,14 +76,20 @@ function createTour(track: string, steps: Step[]): Tour {
 		activeFlag = false;
 	}
 
+	function resume() {
+		if (index >= 0 && stepId !== FINISHED && stepId !== SKIPPED) {
+			activeFlag = true;
+		}
+	}
+
 	function hydrate() {
 		if (hydrated) return;
 		hydrated = true;
 		if (typeof sessionStorage === 'undefined') return;
 		const saved = sessionStorage.getItem(storageKey);
 		if (!saved) return;
-		if (saved === DONE) {
-			stepId = DONE;
+		if (saved === FINISHED || saved === SKIPPED) {
+			stepId = saved;
 			return;
 		}
 		if (steps.some((s) => s.id === saved)) {
@@ -108,11 +118,15 @@ function createTour(track: string, steps: Step[]): Tour {
 		get isDone() {
 			return isDone;
 		},
+		get isFinished() {
+			return isFinished;
+		},
 		start,
 		next,
 		finish,
 		skip,
 		pause,
+		resume,
 		hydrate,
 		clear
 	};

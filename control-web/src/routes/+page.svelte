@@ -21,7 +21,7 @@
 		'Fixed size, enforced by the volume'
 	];
 
-	const tourActive = $derived(storefrontTour.step !== null);
+	const tourActive = $derived(storefrontTour.step !== null || storefrontTour.isFinished);
 
 	function withTour(href: string): string {
 		if (!tourActive) return href;

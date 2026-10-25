@@ -106,7 +106,11 @@
 	}
 
 	$effect(() => {
-		if (maintenance) dashboardTour.pause();
+		if (maintenance) {
+			dashboardTour.pause();
+		} else {
+			dashboardTour.resume();
+		}
 	});
 
 	function pollDatabase(id: string) {
