@@ -13,9 +13,12 @@
 	let error: string = $state('');
 	let submitting: boolean = $state(false);
 	let resetNotice = $state(false);
+	let signupHref = $state('/signup');
 
 	onMount(() => {
-		resetNotice = new URLSearchParams(location.search).get('reset') === '1';
+		const params = new URLSearchParams(location.search);
+		resetNotice = params.get('reset') === '1';
+		signupHref = params.get('tour') === '1' ? '/signup?tour=1' : '/signup';
 	});
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -28,8 +31,13 @@
 				error = await errorMessage(res);
 				return;
 			}
+			const params = new URLSearchParams();
 			const plan = $page.url.searchParams.get('plan');
-			await goto(plan ? `/dashboard?plan=${encodeURIComponent(plan)}` : '/dashboard');
+			const tour = $page.url.searchParams.get('tour');
+			if (plan) params.set('plan', plan);
+			if (tour) params.set('tour', tour);
+			const query = params.toString();
+			await goto(query ? `/dashboard?${query}` : '/dashboard');
 		} finally {
 			submitting = false;
 		}
@@ -44,10 +52,7 @@
 	<h1 class="text-2xl font-semibold text-text">Log in</h1>
 
 	{#if resetNotice}
-		<p class="max-w-sm text-center text-sm text-muted">
-			The demo reset. The account and its databases were removed. Sign in again, or create a new
-			account.
-		</p>
+		<p class="max-w-sm text-center text-sm text-muted">The account was deleted. Create a new one.</p>
 	{/if}
 
 	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
@@ -71,5 +76,5 @@
 		<Button type="submit" disabled={submitting}>Log in</Button>
 	</form>
 
-	<p class="text-sm text-muted">Need an account? <a class="text-accent underline" href="/signup">Sign up</a></p>
+	<p class="text-sm text-muted">Need an account? <a class="text-accent underline" href={signupHref}>Sign up</a></p>
 </div>

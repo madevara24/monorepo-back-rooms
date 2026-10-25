@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { errorMessage, postJSON } from '$lib/api';
@@ -11,6 +12,11 @@
 	let password: string = $state('');
 	let error: string = $state('');
 	let submitting: boolean = $state(false);
+	let loginHref = $state('/login');
+
+	onMount(() => {
+		loginHref = new URLSearchParams(location.search).get('tour') === '1' ? '/login?tour=1' : '/login';
+	});
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -22,8 +28,13 @@
 				error = await errorMessage(res);
 				return;
 			}
+			const params = new URLSearchParams();
 			const plan = $page.url.searchParams.get('plan');
-			await goto(plan ? `/dashboard?plan=${encodeURIComponent(plan)}` : '/dashboard');
+			const tour = $page.url.searchParams.get('tour');
+			if (plan) params.set('plan', plan);
+			if (tour) params.set('tour', tour);
+			const query = params.toString();
+			await goto(query ? `/dashboard?${query}` : '/dashboard');
 		} finally {
 			submitting = false;
 		}
@@ -59,5 +70,5 @@
 		<Button type="submit" disabled={submitting}>Create account</Button>
 	</form>
 
-	<p class="text-sm text-muted">Already have an account? <a class="text-accent underline" href="/login">Log in</a></p>
+	<p class="text-sm text-muted">Already have an account? <a class="text-accent underline" href={loginHref}>Log in</a></p>
 </div>
