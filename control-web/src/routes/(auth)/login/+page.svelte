@@ -6,7 +6,6 @@
 	import Field from '$lib/components/Field.svelte';
 	import Input from '$lib/components/Input.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let email: string = $state('');
 	let password: string = $state('');
@@ -44,39 +43,33 @@
 	}
 </script>
 
-<div class="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
-	<div class="absolute top-4 right-4">
-		<ThemeToggle />
-	</div>
+<h1 class="text-2xl font-semibold text-text">Log in</h1>
 
-	<h1 class="text-2xl font-semibold text-text">Log in</h1>
+{#if resetNotice}
+	<p class="max-w-sm text-center text-sm text-muted">
+		That account was deleted by the 30-minute reset. Create a new one.
+	</p>
+{/if}
 
-	{#if resetNotice}
-		<p class="max-w-sm text-center text-sm text-muted">
-			That account was deleted by the 30-minute reset. Create a new one.
-		</p>
+<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
+	<Field label="Email" id="login-email">
+		<Input id="login-email" type="email" bind:value={email} required autocomplete="email" />
+	</Field>
+	<Field label="Password" id="login-password">
+		<Input
+			id="login-password"
+			type="password"
+			bind:value={password}
+			required
+			autocomplete="current-password"
+		/>
+	</Field>
+
+	{#if error}
+		<p class="text-sm text-error">{error}</p>
 	{/if}
 
-	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
-		<Field label="Email" id="login-email">
-			<Input id="login-email" type="email" bind:value={email} required autocomplete="email" />
-		</Field>
-		<Field label="Password" id="login-password">
-			<Input
-				id="login-password"
-				type="password"
-				bind:value={password}
-				required
-				autocomplete="current-password"
-			/>
-		</Field>
+	<Button type="submit" disabled={submitting}>Log in</Button>
+</form>
 
-		{#if error}
-			<p class="text-sm text-error">{error}</p>
-		{/if}
-
-		<Button type="submit" disabled={submitting}>Log in</Button>
-	</form>
-
-	<p class="text-sm text-muted">Need an account? <a class="text-accent underline" href={signupHref}>Sign up</a></p>
-</div>
+<p class="text-sm text-muted">Need an account? <a class="text-accent underline" href={signupHref}>Sign up</a></p>
