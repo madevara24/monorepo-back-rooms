@@ -35,9 +35,14 @@
 
 	async function handleLogout() {
 		await postJSON('/api/auth/logout');
-		session.clear();
 		closeMobile();
+		// Navigate away from any auth-guarded (app) route before clearing the
+		// session: clearing first would flip session.signedIn to false while
+		// still on e.g. /dashboard, racing the (app) layout's guard effect
+		// (which treats signedIn -> false as an unauthenticated redirect) against
+		// this goto. Clearing after the navigation settles avoids that race.
 		await goto('/');
+		session.clear();
 	}
 </script>
 
