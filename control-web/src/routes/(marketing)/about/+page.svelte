@@ -5,7 +5,6 @@
 	import Panel from '$lib/components/Panel.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Status from '$lib/components/Status.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
 	let endpoint: string = $state('/api');
@@ -73,11 +72,6 @@
 </script>
 
 <div class="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-4 py-6">
-	<header class="flex items-center justify-between">
-		<span class="text-lg font-semibold text-text">MBR</span>
-		<ThemeToggle />
-	</header>
-
 	<StatusRail {apiState} {endpoint} {databaseCount} {provisionedGB} />
 
 	<section class="flex flex-col gap-3">

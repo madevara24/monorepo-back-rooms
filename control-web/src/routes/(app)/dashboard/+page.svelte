@@ -13,7 +13,6 @@
 	} from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
 	import { dashboardTour } from '$lib/tour.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
 	import StatusRail from '$lib/components/StatusRail.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import Field from '$lib/components/Field.svelte';
@@ -24,7 +23,6 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 
 	let user: User | null = $state(null);
 	let databases: Database[] = $state([]);
@@ -101,7 +99,7 @@
 	function requireAuth(res: Response): boolean {
 		if (res.status !== 401) return false;
 		dashboardTour.clear();
-		void goto('/login?reset=1&tour=1');
+		void goto('/signup?reset=1&tour=1');
 		return true;
 	}
 
@@ -279,20 +277,7 @@
 	}
 </script>
 
-<TopBar
-	links={[
-		{ href: '/billing', label: 'Billing' },
-		...(user?.is_admin ? [{ href: '/admin', label: 'Admin' }] : [])
-	]}
-	userEmail={user?.email}
-	onLogout={handleLogout}
-/>
-<div data-tour="dashboard-status">
-	<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
-	<div class="mx-auto max-w-3xl px-4 pt-3">
-		<DemoCountdown />
-	</div>
-</div>
+<StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
 
 <main class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
 	{#if loading}

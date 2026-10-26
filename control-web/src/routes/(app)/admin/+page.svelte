@@ -16,7 +16,6 @@
 		type CreateDatabaseResult
 	} from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
 	import StatusRail from '$lib/components/StatusRail.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import Field from '$lib/components/Field.svelte';
@@ -27,7 +26,6 @@
 	import CopyField from '$lib/components/CopyField.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
 	import Dialog from '$lib/components/Dialog.svelte';
 
 	const dokployURL = publicEnv.PUBLIC_DOKPLOY_URL ?? '';
@@ -289,15 +287,13 @@
 	}
 </script>
 
-<TopBar
-	links={[
-		...(dokployURL ? [{ href: dokployURL, label: 'Dokploy' }] : []),
-		{ href: '/dashboard', label: 'Dashboard' }
-	]}
-/>
 <StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
 <div class="mx-auto flex max-w-5xl items-center justify-between px-4 pt-3">
-	<DemoCountdown />
+	{#if dokployURL}
+		<a href={dokployURL} class="text-sm text-text underline hover:text-accent">Dokploy</a>
+	{:else}
+		<span></span>
+	{/if}
 	<Button variant="danger" size="sm" onclick={() => (confirmReset = true)}>Reset demo</Button>
 </div>
 

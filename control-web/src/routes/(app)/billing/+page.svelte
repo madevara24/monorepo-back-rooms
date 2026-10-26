@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { errorMessage, postJSON, type Invoice } from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import Table from '$lib/components/Table.svelte';
 	import Status from '$lib/components/Status.svelte';
@@ -56,8 +55,6 @@
 		return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(amount);
 	}
 </script>
-
-<TopBar links={[{ href: '/dashboard', label: 'Dashboard' }]} />
 
 <main class="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
 	<h1 class="text-2xl font-semibold text-text">Billing</h1>

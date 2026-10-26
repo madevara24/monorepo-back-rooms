@@ -2,8 +2,6 @@
 	import { onMount, getContext } from 'svelte';
 	import type { Plan } from '$lib/api';
 	import Button from '$lib/components/Button.svelte';
-	import DemoCountdown from '$lib/components/DemoCountdown.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { storefrontTour } from '$lib/tour.svelte';
 
 	const prompt = getContext<{ show: () => void; hide: () => void }>('mbr-prompt');
@@ -61,11 +59,6 @@
 </svelte:head>
 
 <div class="mx-auto flex min-h-screen max-w-5xl flex-col gap-10 px-4 py-6">
-	<header class="flex items-center justify-between">
-		<span class="text-lg font-semibold text-text">MBR</span>
-		<ThemeToggle />
-	</header>
-
 	<section class="flex flex-col gap-3" data-tour="hero">
 		<h1 class="text-3xl font-semibold text-text">Postgres, by the gigabyte.</h1>
 		<p class="text-muted">
@@ -139,10 +132,4 @@
 			reference and marked sold out for this demo. The demo does not charge you.
 		</p>
 	</section>
-
-	<footer class="mt-auto flex flex-wrap items-center gap-3 text-xs text-muted">
-		<DemoCountdown />
-		<a href="/demo" class="underline">What is this?</a>
-		<a href="/about" class="underline">About</a>
-	</footer>
 </div>

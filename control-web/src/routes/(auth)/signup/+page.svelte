@@ -6,16 +6,18 @@
 	import Field from '$lib/components/Field.svelte';
 	import Input from '$lib/components/Input.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
 	let email: string = $state('');
 	let password: string = $state('');
 	let error: string = $state('');
 	let submitting: boolean = $state(false);
 	let loginHref = $state('/login');
+	let resetNotice = $state(false);
 
 	onMount(() => {
-		loginHref = new URLSearchParams(location.search).get('tour') === '1' ? '/login?tour=1' : '/login';
+		const params = new URLSearchParams(location.search);
+		resetNotice = params.get('reset') === '1';
+		loginHref = params.get('tour') === '1' ? '/login?tour=1' : '/login';
 	});
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -41,34 +43,34 @@
 	}
 </script>
 
-<div class="flex min-h-screen flex-col items-center justify-center gap-6 px-4">
-	<div class="absolute top-4 right-4">
-		<ThemeToggle />
-	</div>
+<h1 class="text-2xl font-semibold text-text">Sign up</h1>
 
-	<h1 class="text-2xl font-semibold text-text">Sign up</h1>
+{#if resetNotice}
+	<p class="max-w-sm text-center text-sm text-muted">
+		That account was deleted by the 30-minute reset. Create a new one.
+	</p>
+{/if}
 
-	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
-		<Field label="Email" id="signup-email">
-			<Input id="signup-email" type="email" bind:value={email} required autocomplete="email" />
-		</Field>
-		<Field label="Password" id="signup-password">
-			<Input
-				id="signup-password"
-				type="password"
-				bind:value={password}
-				required
-				minlength={8}
-				autocomplete="new-password"
-			/>
-		</Field>
+<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>
+	<Field label="Email" id="signup-email">
+		<Input id="signup-email" type="email" bind:value={email} required autocomplete="email" />
+	</Field>
+	<Field label="Password" id="signup-password">
+		<Input
+			id="signup-password"
+			type="password"
+			bind:value={password}
+			required
+			minlength={8}
+			autocomplete="new-password"
+		/>
+	</Field>
 
-		{#if error}
-			<p class="text-sm text-error">{error}</p>
-		{/if}
+	{#if error}
+		<p class="text-sm text-error">{error}</p>
+	{/if}
 
-		<Button type="submit" disabled={submitting}>Create account</Button>
-	</form>
+	<Button type="submit" disabled={submitting}>Create account</Button>
+</form>
 
-	<p class="text-sm text-muted">Already have an account? <a class="text-accent underline" href={loginHref}>Log in</a></p>
-</div>
+<p class="text-sm text-muted">Already have an account? <a class="text-accent underline" href={loginHref}>Log in</a></p>
