@@ -302,12 +302,12 @@
 	{:else}
 		<Panel title="New database" tourId="create-panel">
 			<p class="text-xs text-muted">
-				{databases.length} of 2 databases. Everything here is deleted at the next reset.
+				{databases.length} of 2 databases. The next reset deletes all of them.
 			</p>
 			{#if maintenance}
-				<p class="text-sm text-warning">The demo is resetting. The form unlocks shortly.</p>
+				<p class="text-sm text-warning">The demo is resetting. The form will unlock when it finishes.</p>
 			{:else if resetWarning}
-				<p class="text-sm text-warning">The demo resets in less than two minutes.</p>
+				<p class="text-sm text-warning">The demo resets in under two minutes.</p>
 			{/if}
 			<form class="flex flex-wrap items-end gap-3" data-tour="create-form" onsubmit={handleCreate}>
 				<Field label="Name" id="create-name">
@@ -350,9 +350,9 @@
 
 			{#if createdID}
 				<div class="flex flex-col gap-2 rounded-md border border-warning bg-bg p-3 text-sm">
-					<p>Database created. This password is shown once and will not be shown again.</p>
+					<p>Database created. Copy the password now; the dashboard will not show it again.</p>
 					{#if nextResetLabel}
-						<p class="text-xs text-muted">This password works until {nextResetLabel} GMT+7.</p>
+						<p class="text-xs text-muted">The password works until {nextResetLabel} GMT+7.</p>
 					{/if}
 					<CopyField label="Host" value={createdHost} />
 					<CopyField label="Port" value={String(createdPort ?? '')} />
@@ -361,26 +361,11 @@
 					<CopyField label="Password" value={createdPassword} />
 					{#if connectionString}
 						<CopyField label="Connection string" value={connectionString} />
-						<p>DBeaver / JDBC URL (DBeaver does not accept the connection string above):</p>
 						<CopyField label="JDBC URL" value={jdbcURL} />
-						<p class="text-xs text-muted">
-							Enter the username (<code>postgres</code>) and password separately in DBeaver. This
-							URL's <code>sslmode=require</code> encrypts the connection but does not verify the
-							server's identity. For <code>sslmode=verify-full</code>, which also verifies the
-							server, download the
-							<a
-								class="underline"
-								href="https://letsencrypt.org/certs/isrgrootx1.pem"
-								target="_blank"
-								rel="noopener noreferrer">ISRG Root X1 certificate</a
-							>
-							and replace the query string with
-							<code>sslmode=verify-full&amp;sslrootcert=&lt;path to the downloaded PEM&gt;</code>.
-						</p>
 					{:else if createdDatabase?.status === 'failed'}
 						<p class="text-error">Provisioning failed. Delete this database and try again.</p>
 					{:else}
-						<Status state="provisioning" label="Provisioning... the connection string will appear here once running." />
+						<Status state="provisioning" label="Provisioning. The connection string appears when the database is ready." />
 					{/if}
 					<Button variant="ghost" size="sm" onclick={dismissCreated}>Dismiss</Button>
 				</div>

@@ -95,14 +95,14 @@
 		<p id="mbr-tour-body" class="text-sm text-muted">{tour.step.body}</p>
 		<div class="flex justify-end gap-2">
 			<button type="button" class="text-sm text-muted underline" onclick={() => tour.skip()}>
-				Skip
+				Skip tour
 			</button>
 			<button
 				type="button"
 				class="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent hover:opacity-90"
 				onclick={() => (tour.isLast ? tour.finish() : tour.next())}
 			>
-				{tour.isLast ? 'Finish' : 'Next'}
+				{tour.isLast ? 'Done' : 'Next'}
 			</button>
 		</div>
 	</div>
