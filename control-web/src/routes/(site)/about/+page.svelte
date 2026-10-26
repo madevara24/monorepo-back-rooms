@@ -1,17 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, getContext } from 'svelte';
 	import type { Plan } from '$lib/api';
-	import StatusRail from '$lib/components/StatusRail.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Status from '$lib/components/Status.svelte';
+	import { SESSION_CONTEXT_KEY, type Session } from '$lib/session.svelte';
 
-	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
-	let endpoint: string = $state('/api');
-	let signedIn: boolean = $state(false);
-	let isAdmin: boolean = $state(false);
-	let databaseCount: number | null = $state(null);
-	let provisionedGB: number | null = $state(null);
+	const session = getContext<Session>(SESSION_CONTEXT_KEY);
+
 	let plans: Plan[] = $state([]);
 	let plansState: 'loading' | 'ready' | 'error' = $state('loading');
 
@@ -26,16 +22,6 @@
 		}
 	];
 
-	async function checkHealth() {
-		try {
-			const res = await fetch('/healthz');
-			const body = await res.json();
-			apiState = body.status === 'ok' ? 'reachable' : 'unreachable';
-		} catch {
-			apiState = 'unreachable';
-		}
-	}
-
 	async function loadPlans() {
 		plansState = 'loading';
 		try {
@@ -48,32 +34,12 @@
 		}
 	}
 
-	onMount(async () => {
-		endpoint = `${location.host}/api`;
-		await checkHealth();
-		await loadPlans();
-		try {
-			const meRes = await fetch('/api/me');
-			signedIn = meRes.ok;
-			if (meRes.ok) {
-				const me = await meRes.json();
-				isAdmin = me.is_admin === true;
-				const dbRes = await fetch('/api/databases');
-				if (dbRes.ok) {
-					const databases: { size_gb: number }[] = await dbRes.json();
-					databaseCount = databases.length;
-					provisionedGB = databases.reduce((sum, d) => sum + d.size_gb, 0);
-				}
-			}
-		} catch {
-			signedIn = false;
-		}
+	onMount(() => {
+		loadPlans();
 	});
 </script>
 
 <div class="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 px-4 py-6">
-	<StatusRail {apiState} {endpoint} {databaseCount} {provisionedGB} />
-
 	<section class="flex flex-col gap-3">
 		<h1 class="text-3xl font-semibold text-text">A self-serve Postgres marketplace.</h1>
 		<p class="text-muted">
@@ -82,9 +48,9 @@
 		</p>
 		<nav class="flex flex-wrap gap-3">
 			<a href="/"><Button variant="secondary">See packages</Button></a>
-			{#if signedIn}
+			{#if session.signedIn}
 				<a href="/dashboard"><Button>Go to dashboard</Button></a>
-				{#if isAdmin}
+				{#if session.isAdmin}
 					<a href="/admin"><Button variant="secondary">Admin</Button></a>
 				{/if}
 			{:else}

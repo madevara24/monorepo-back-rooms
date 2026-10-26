@@ -10,7 +10,7 @@
 			<a href="/" class="underline">Storefront</a>
 		{/if}
 		{#if pathname !== '/demo'}
-			<a href="/demo" class="underline">What is this?</a>
+			<a href="/demo" class="underline">Demo</a>
 		{/if}
 		{#if pathname !== '/about'}
 			<a href="/about" class="underline">About</a>

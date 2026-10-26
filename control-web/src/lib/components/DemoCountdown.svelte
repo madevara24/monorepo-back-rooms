@@ -50,11 +50,11 @@
 </script>
 
 {#if !hidden && status}
-	<span class="text-xs text-muted">
-		{#if status.maintenance}
-			Demo · resetting now
-		{:else}
+	{#if status.maintenance}
+		<span role="status" aria-live="polite" class="text-xs text-muted">Demo · resetting now</span>
+	{:else}
+		<span role="timer" aria-live="off" class="text-xs text-muted">
 			Demo · resets in {countdown} · next {nextLabel} GMT+7
-		{/if}
-	</span>
+		</span>
+	{/if}
 {/if}

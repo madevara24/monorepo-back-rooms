@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { onMount, getContext } from 'svelte';
 	import { errorMessage, postJSON, type Invoice } from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
+	import { AUTH_GUARD_CONTEXT_KEY, type AuthGuard } from '$lib/authGuard';
 	import Panel from '$lib/components/Panel.svelte';
 	import Table from '$lib/components/Table.svelte';
 	import Status from '$lib/components/Status.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+
+	const authGuard = getContext<AuthGuard>(AUTH_GUARD_CONTEXT_KEY);
 
 	let invoices: Invoice[] = $state([]);
 	let loading: boolean = $state(true);
@@ -17,6 +19,10 @@
 	async function loadInvoices() {
 		const res = await fetch('/api/billing/invoices');
 		if (!res.ok) {
+			if (res.status === 401) {
+				authGuard.handleUnauthenticated();
+				return;
+			}
 			error = `could not load invoices (${res.status})`;
 			return;
 		}
@@ -25,11 +31,6 @@
 
 	onMount(async () => {
 		try {
-			const meRes = await fetch('/api/me');
-			if (!meRes.ok) {
-				await goto('/login');
-				return;
-			}
 			await loadInvoices();
 		} finally {
 			loading = false;
@@ -56,7 +57,7 @@
 	}
 </script>
 
-<main class="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
+<div class="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
 	<h1 class="text-2xl font-semibold text-text">Billing</h1>
 
 	{#if loading}
@@ -99,4 +100,4 @@
 			{/if}
 		</Panel>
 	{/if}
-</main>
+</div>
