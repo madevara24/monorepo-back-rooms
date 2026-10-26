@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
-	import { goto, replaceState } from '$app/navigation';
+	import { onDestroy, onMount, getContext } from 'svelte';
+	import { replaceState } from '$app/navigation';
 	import { page } from '$app/stores';
 	import {
 		errorMessage,
@@ -8,11 +8,11 @@
 		type CreateDatabaseResult,
 		type Database,
 		type DemoStatus,
-		type Plan,
-		type User
+		type Plan
 	} from '$lib/api';
 	import { pushToast } from '$lib/toast.svelte';
 	import { dashboardTour } from '$lib/tour.svelte';
+	import { AUTH_GUARD_CONTEXT_KEY, type AuthGuard } from '$lib/authGuard';
 	import StatusRail from '$lib/components/StatusRail.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import Field from '$lib/components/Field.svelte';
@@ -24,7 +24,8 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
-	let user: User | null = $state(null);
+	const authGuard = getContext<AuthGuard>(AUTH_GUARD_CONTEXT_KEY);
+
 	let databases: Database[] = $state([]);
 	let loading: boolean = $state(true);
 	let error: string = $state('');
@@ -98,8 +99,7 @@
 
 	function requireAuth(res: Response): boolean {
 		if (res.status !== 401) return false;
-		dashboardTour.clear();
-		void goto('/signup?reset=1&tour=1');
+		authGuard.handleUnauthenticated();
 		return true;
 	}
 
@@ -172,12 +172,6 @@
 		}
 
 		try {
-			const meRes = await fetch('/api/me');
-			if (!meRes.ok) {
-				if (!requireAuth(meRes)) await goto('/login');
-				return;
-			}
-			user = await meRes.json();
 			await loadDemoStatus();
 			demoTimers.push(setInterval(() => (demoNow = Date.now()), 1000));
 			demoTimers.push(setInterval(loadDemoStatus, 15000));
@@ -185,7 +179,7 @@
 			await loadDatabases();
 		} finally {
 			loading = false;
-			if (user && !error && capturedTour === '1') {
+			if (!error && capturedTour === '1') {
 				dashboardTour.start();
 			}
 		}
@@ -274,7 +268,7 @@
 
 <StatusRail apiState="reachable" {endpoint} {databaseCount} {provisionedGB} dense />
 
-<main class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
+<div class="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6">
 	{#if loading}
 		<p class="text-muted">Loading...</p>
 	{:else if error}
@@ -394,7 +388,7 @@
 			{/if}
 		</Panel>
 	{/if}
-</main>
+</div>
 
 <ConfirmDialog
 	open={deleteTarget !== null}

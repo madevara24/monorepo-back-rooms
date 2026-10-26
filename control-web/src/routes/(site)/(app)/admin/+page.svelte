@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { env as publicEnv } from '$env/dynamic/public';
 	import {
 		errorMessage,
@@ -88,17 +87,6 @@
 	onMount(async () => {
 		endpoint = `${location.host}/api`;
 		try {
-			const meRes = await fetch('/api/me');
-			if (!meRes.ok) {
-				await goto('/login');
-				return;
-			}
-			const me = await meRes.json();
-			if (!me.is_admin) {
-				await goto('/');
-				return;
-			}
-
 			[overview, users, databases, nodes, jobs, databaseMetrics, plans] = await Promise.all([
 				loadJSON<AdminOverview>('/api/admin/overview'),
 				loadJSON<AdminUser[]>('/api/admin/users'),
@@ -297,7 +285,7 @@
 	<Button variant="danger" size="sm" onclick={() => (confirmReset = true)}>Reset demo</Button>
 </div>
 
-<main class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
+<div class="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6">
 	{#if loading}
 		<p class="text-muted">Loading...</p>
 	{:else if error}
@@ -635,7 +623,7 @@
 			{/if}
 		</Panel>
 	{/if}
-</main>
+</div>
 
 <ConfirmDialog
 	open={confirmAction !== null}

@@ -3,13 +3,14 @@
 	import type { Plan } from '$lib/api';
 	import Button from '$lib/components/Button.svelte';
 	import { storefrontTour } from '$lib/tour.svelte';
+	import { SESSION_CONTEXT_KEY, type Session } from '$lib/session.svelte';
 
 	const prompt = getContext<{ show: () => void; hide: () => void }>('mbr-prompt');
+	const session = getContext<Session>(SESSION_CONTEXT_KEY);
 
-	let signedIn: boolean = $state(false);
-	let isAdmin: boolean = $state(false);
 	let plans: Plan[] = $state([]);
 	let plansState: 'loading' | 'ready' | 'error' = $state('loading');
+	let promptShown = false;
 
 	const cardBullets = ['TLS on a public hostname', 'Connection string and JDBC URL'];
 
@@ -33,24 +34,18 @@
 	}
 
 	function buyHref(slug: string) {
-		const path = signedIn ? '/dashboard' : '/signup';
+		const path = session.signedIn ? '/dashboard' : '/signup';
 		return withTour(`${path}?plan=${encodeURIComponent(slug)}`);
 	}
 
-	onMount(async () => {
-		await loadPlans();
-		try {
-			const meRes = await fetch('/api/me');
-			signedIn = meRes.ok;
-			if (meRes.ok) {
-				const me = await meRes.json();
-				isAdmin = me.is_admin === true;
-			}
-		} catch {
-			signedIn = false;
-		} finally {
-			if (!signedIn) prompt?.show();
-		}
+	onMount(() => {
+		loadPlans();
+	});
+
+	$effect(() => {
+		if (session.loading || promptShown) return;
+		promptShown = true;
+		if (!session.signedIn) prompt?.show();
 	});
 </script>
 
@@ -66,9 +61,9 @@
 			string.
 		</p>
 		<nav class="flex flex-wrap gap-3" data-tour="account-cta">
-			{#if signedIn}
+			{#if session.signedIn}
 				<a href={withTour('/dashboard')}><Button>Go to dashboard</Button></a>
-				{#if isAdmin}
+				{#if session.isAdmin}
 					<a href="/admin"><Button variant="secondary">Admin</Button></a>
 				{/if}
 			{:else}
