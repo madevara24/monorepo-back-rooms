@@ -52,7 +52,9 @@
 	<h1 class="text-2xl font-semibold text-text">Log in</h1>
 
 	{#if resetNotice}
-		<p class="max-w-sm text-center text-sm text-muted">The account was deleted. Create a new one.</p>
+		<p class="max-w-sm text-center text-sm text-muted">
+			That account was deleted by the 30-minute reset. Create a new one.
+		</p>
 	{/if}
 
 	<form class="flex w-full max-w-sm flex-col gap-3" onsubmit={handleSubmit}>

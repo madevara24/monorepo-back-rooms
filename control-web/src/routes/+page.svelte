@@ -8,34 +8,18 @@
 
 	const prompt = getContext<{ show: () => void; hide: () => void }>('mbr-prompt');
 
-	let apiState: 'reachable' | 'unreachable' | 'checking' = $state('checking');
 	let signedIn: boolean = $state(false);
 	let isAdmin: boolean = $state(false);
 	let plans: Plan[] = $state([]);
 	let plansState: 'loading' | 'ready' | 'error' = $state('loading');
 
-	const cardBullets = [
-		'One container, one tenant',
-		'TLS on a public hostname',
-		'Connection string and JDBC URL',
-		'Fixed size, enforced by the volume'
-	];
+	const cardBullets = ['TLS on a public hostname', 'Connection string and JDBC URL'];
 
 	const tourActive = $derived(storefrontTour.step !== null || storefrontTour.isFinished);
 
 	function withTour(href: string): string {
 		if (!tourActive) return href;
 		return `${href}${href.includes('?') ? '&' : '?'}tour=1`;
-	}
-
-	async function checkHealth() {
-		try {
-			const res = await fetch('/healthz');
-			const body = await res.json();
-			apiState = body.status === 'ok' ? 'reachable' : 'unreachable';
-		} catch {
-			apiState = 'unreachable';
-		}
 	}
 
 	async function loadPlans() {
@@ -56,7 +40,6 @@
 	}
 
 	onMount(async () => {
-		await checkHealth();
 		await loadPlans();
 		try {
 			const meRes = await fetch('/api/me');
@@ -103,10 +86,7 @@
 	</section>
 
 	<section class="flex flex-col gap-4" data-tour="packages">
-		<div>
-			<h2 class="text-xl font-semibold text-text">Packages</h2>
-			<p class="text-muted">One container per database. Fixed size, enforced by the volume.</p>
-		</div>
+		<h2 class="text-xl font-semibold text-text">Packages</h2>
 
 		{#if plansState === 'loading'}
 			<p class="text-muted">Loading packages...</p>
@@ -155,13 +135,12 @@
 		{/if}
 
 		<p class="text-xs text-muted">
-			Monthly prices per package. The 1 GB and 5 GB packages are available; the 10 GB and 20 GB
-			packages are sold out. Payment is mocked in this build.
+			Prices are monthly. 1 GB and 5 GB are available. The 10 GB and 20 GB prices are shown for
+			reference and marked sold out for this demo. The demo does not charge you.
 		</p>
 	</section>
 
 	<footer class="mt-auto flex flex-wrap items-center gap-3 text-xs text-muted">
-		<span>API {apiState === 'checking' ? 'checking…' : apiState}</span>
 		<DemoCountdown />
 		<a href="/demo" class="underline">What is this?</a>
 		<a href="/about" class="underline">About</a>

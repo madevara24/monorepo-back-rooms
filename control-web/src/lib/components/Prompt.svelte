@@ -63,17 +63,20 @@
 		class="fixed right-4 bottom-4 z-50 flex w-[calc(100%-2rem)] max-w-xs flex-col gap-3 rounded-md border border-line bg-surface p-4 text-text shadow-lg outline-none sm:right-6 sm:bottom-6"
 	>
 		<h2 id="mbr-popup-title" class="text-sm font-semibold">A demo Postgres marketplace</h2>
-		<p class="text-sm text-muted">Real databases and TLS, mocked payment, reset every 30 minutes.</p>
+		<p class="text-sm text-muted">
+			Choose a size and connect over TLS. The 30-minute reset deletes the database, and the demo
+			does not charge you.
+		</p>
 		<div class="flex justify-end gap-2">
 			<button type="button" class="text-sm text-muted underline" onclick={dismiss}>
-				Just browsing
+				See packages
 			</button>
 			<button
 				type="button"
 				class="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent hover:opacity-90"
 				onclick={start}
 			>
-				Start the tour
+				Show me how
 			</button>
 		</div>
 	</div>
