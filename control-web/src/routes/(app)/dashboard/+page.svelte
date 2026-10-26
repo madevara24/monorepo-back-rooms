@@ -198,11 +198,6 @@
 		demoTimers = [];
 	});
 
-	async function handleLogout() {
-		await postJSON('/api/auth/logout');
-		await goto('/');
-	}
-
 	async function handleCreate(event: SubmitEvent) {
 		event.preventDefault();
 		createError = '';
