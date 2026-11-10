@@ -36,9 +36,9 @@ services:
       - "traefik.http.routers.mbr-api.tls=true"
       - "traefik.http.services.mbr-api.loadbalancer.server.port=8080"
 
-  mbr-web:
+  mbr-control-panel-web:
     build:
-      context: ./control-web
+      context: ./control-panel-web
       dockerfile: Dockerfile
       args:
         PUBLIC_DOKPLOY_URL: ${PUBLIC_DOKPLOY_URL}
@@ -53,11 +53,11 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.mbr-web.rule=Host(`mbr.madevara.com`)"
-      - "traefik.http.routers.mbr-web.priority=1"
-      - "traefik.http.routers.mbr-web.entrypoints=websecure"
-      - "traefik.http.routers.mbr-web.tls=true"
-      - "traefik.http.services.mbr-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.mbr-control-panel-web.rule=Host(`mbr.madevara.com`)"
+      - "traefik.http.routers.mbr-control-panel-web.priority=1"
+      - "traefik.http.routers.mbr-control-panel-web.entrypoints=websecure"
+      - "traefik.http.routers.mbr-control-panel-web.tls=true"
+      - "traefik.http.services.mbr-control-panel-web.loadbalancer.server.port=80"
 
   mbr-control-db:
     image: postgres:17
