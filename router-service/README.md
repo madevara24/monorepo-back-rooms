@@ -7,6 +7,11 @@ TLS, never holds a certificate or key, and never sees a password: the
 tenant's own Postgres still presents its wildcard certificate and
 enforces `hostssl`.
 
+Routing itself happens on the `server_name` (SNI) field of the TLS
+ClientHello, not on anything Postgres-specific: the actual Postgres
+startup packet travels encrypted inside the TLS connection the router
+splices through, so the router never reads it.
+
 It replaces nginx's `stream { ssl_preread ... }` on the shared `:5432`.
 nginx's `ssl_preread` only works when a client's very first bytes are a
 TLS ClientHello (`sslnegotiation=direct`); a client using Postgres's
@@ -98,8 +103,8 @@ fake backend.
 ## Production
 
 `router-service` deploys on the same VPS as
-`control-panel-service`/`control-web`, but it is **not** a Dokploy app:
-it's a plain `mbr-router` Docker container, run and restarted directly
+`control-panel-service`/`control-panel-web`, but it is **not** a Dokploy app:
+it's a plain `mbr-router-service` Docker container, run and restarted directly
 over SSH, specifically so a routine control-plane deploy never restarts
 the live `:5432` data path. It bind-mounts
 `/etc/mbr/routes:/etc/mbr/routes:ro` — read-only; it is never the
@@ -113,14 +118,14 @@ gated by a `changes` job (`dorny/paths-filter` over
 on a router-touching push to `main`, or any manual `workflow_dispatch`
 (which forces it regardless of path). The job:
 
-1. Builds `mbr-router:$GITHUB_SHA` on the GitHub runner from
+1. Builds `mbr-router-service:$GITHUB_SHA` on the GitHub runner from
    `router-service/Dockerfile`.
-2. Streams it to the VPS with `docker save mbr-router:$GITHUB_SHA |
+2. Streams it to the VPS with `docker save mbr-router-service:$GITHUB_SHA |
    gzip | ssh ... docker load` — there's no registry in between.
-3. Replaces the running container: `docker rm -f mbr-router`, then
-   `docker run -d --name mbr-router --restart unless-stopped -p
+3. Replaces the running container: `docker rm -f mbr-router-service`, then
+   `docker run -d --name mbr-router-service --restart unless-stopped -p
    5432:15432 -p 127.0.0.1:9099:9099 -v
-   /etc/mbr/routes:/etc/mbr/routes:ro mbr-router:$GITHUB_SHA`.
+   /etc/mbr/routes:/etc/mbr/routes:ro mbr-router-service:$GITHUB_SHA`.
 4. Polls `http://127.0.0.1:9099/healthz` over SSH until `commit`
    matches `$GITHUB_SHA`.
 
@@ -143,7 +148,7 @@ This router replaces nginx's `stream { ssl_preread ... }` on `:5432`
 without a flag day: it runs side by side with nginx on a different
 port first, gets verified, and only then takes over `:5432`.
 
-1. **Stand up on `:5433` first.** Build and run the `mbr-router`
+1. **Stand up on `:5433` first.** Build and run the `mbr-router-service`
    container (per `dokploy-compose.router.yml`'s build/run shape) with
    its port mapping temporarily changed to `"5433:15432"` (instead of
    `"5432:15432"`), using the live route map. Leave nginx and the real
@@ -170,7 +175,7 @@ port first, gets verified, and only then takes over `:5432`.
 3. **Cut `:5432` over.** Stop nginx's `stream` systemd unit (leave its
    config and unit **installed** — don't remove them, that's the
    rollback path), then point the container's port mapping at
-   `"5432:15432"` and re-run it (`docker rm -f mbr-router` + `docker
+   `"5432:15432"` and re-run it (`docker rm -f mbr-router-service` + `docker
    run ...`, as `.github/workflows/deploy.yml`'s `deploy-router` job
    does) so Docker's port publishing binds host `:5432`. Keep nginx
    disabled, not uninstalled, for at least a week.
@@ -189,8 +194,8 @@ port first, gets verified, and only then takes over `:5432`.
 ### Rollback
 
 nginx's `stream` config and systemd unit stay installed specifically
-for this: if the router needs to come back out, stop the `mbr-router`
-container (`docker stop mbr-router` or `docker rm -f mbr-router`) and
+for this: if the router needs to come back out, stop the `mbr-router-service`
+container (`docker stop mbr-router-service` or `docker rm -f mbr-router-service`) and
 re-enable + start nginx's `stream` unit. Because nginx's `ssl_preread`
 setup never understood
 indirect negotiation, rolling back also means clients need

@@ -6,7 +6,7 @@ description: Run the repo's Go and frontend checks before committing or opening 
 
 ```bash
 make test    # go vet + go test (both modules) + svelte-check
-make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-web/
+make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-panel-web/
 ```
 
 Individual layers:
@@ -15,7 +15,7 @@ Individual layers:
 go test ./control-panel-service/... ./node-agent-service/...
 cd control-panel-service && golangci-lint run
 cd node-agent-service && golangci-lint run
-cd control-web && npm run check && npm run build
+cd control-panel-web && npm run check && npm run build
 ```
 
 - Read the output: every package must pass; a skipped test is not a pass.

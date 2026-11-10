@@ -2,7 +2,7 @@
 #
 # Build context is the repo root (see dokploy-compose.yml and
 # compose.yaml: `dockerfile: control-panel-service/Dockerfile`), because
-# go.work ties this module to node-agent-service and connection-router,
+# go.work ties this module to node-agent-service and router-service,
 # and all three must be present for `go build` to resolve the workspace.
 FROM golang:1.26-alpine AS build
 RUN apk add --no-cache git ca-certificates
@@ -16,7 +16,7 @@ ARG COMMIT_SHA=""
 COPY go.work go.work.sum ./
 COPY control-panel-service/go.mod control-panel-service/go.sum control-panel-service/
 COPY node-agent-service/go.mod node-agent-service/go.sum node-agent-service/
-COPY connection-router/go.mod connection-router/go.sum connection-router/
+COPY router-service/go.mod router-service/go.sum router-service/
 RUN go -C control-panel-service mod download
 
 COPY . .
