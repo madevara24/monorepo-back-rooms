@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/pgwire"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/sni"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/pgwire"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/sni"
 )
 
 // Defaults match the task's operational requirements; cmd/router

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/pgwire"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/proxy"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/pgwire"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/proxy"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 // staticRoutes adapts a plain routemap.Map to proxy.RouteSource for

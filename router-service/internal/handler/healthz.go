@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/proxy"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/proxy"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 // Handler serves the router's health and negotiation-counter endpoint.

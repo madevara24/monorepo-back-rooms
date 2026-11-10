@@ -1,7 +1,7 @@
 go 1.26.0
 
 use (
-	./connection-router
+	./router-service
 	./control-panel-service
 	./node-agent-service
 )

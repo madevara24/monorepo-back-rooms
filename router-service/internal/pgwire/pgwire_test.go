@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/pgwire"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/pgwire"
 )
 
 func TestLooksLikeStartupMessage(t *testing.T) {

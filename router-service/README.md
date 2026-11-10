@@ -1,4 +1,4 @@
-# connection-router
+# router-service
 
 A protocol-aware TCP router: it reads just enough of a client's TLS or
 Postgres startup handshake to pick a tenant by SNI, then forwards every
@@ -79,7 +79,7 @@ expects.
 
 ## Local dev
 
-`connection-router` is deliberately not part of the root `make dev`:
+`router-service` is deliberately not part of the root `make dev`:
 it routes to real tenant hosts by SNI, which local dev has none of,
 and its default route map path is production-only and
 permission-restricted. To run it standalone against a fake backend:
@@ -97,24 +97,24 @@ fake backend.
 
 ## Production
 
-`connection-router` deploys on the same VPS as
+`router-service` deploys on the same VPS as
 `control-panel-service`/`control-web`, but it is **not** a Dokploy app:
 it's a plain `mbr-router` Docker container, run and restarted directly
 over SSH, specifically so a routine control-plane deploy never restarts
 the live `:5432` data path. It bind-mounts
 `/etc/mbr/routes:/etc/mbr/routes:ro` — read-only; it is never the
 writer — and runs as `65532:65532` (distroless's `nonroot`, baked into
-`connection-router/Dockerfile`), matching the map directory's existing
+`router-service/Dockerfile`), matching the map directory's existing
 owner. No new host user, and no change to who writes the map.
 
 Deploying it is `.github/workflows/deploy.yml`'s `deploy-router` job,
 gated by a `changes` job (`dorny/paths-filter` over
-`connection-router/**` and `dokploy-compose.router.yml`) so it only runs
+`router-service/**` and `dokploy-compose.router.yml`) so it only runs
 on a router-touching push to `main`, or any manual `workflow_dispatch`
 (which forces it regardless of path). The job:
 
 1. Builds `mbr-router:$GITHUB_SHA` on the GitHub runner from
-   `connection-router/Dockerfile`.
+   `router-service/Dockerfile`.
 2. Streams it to the VPS with `docker save mbr-router:$GITHUB_SHA |
    gzip | ssh ... docker load` — there's no registry in between.
 3. Replaces the running container: `docker rm -f mbr-router`, then
