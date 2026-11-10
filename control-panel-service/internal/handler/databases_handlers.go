@@ -13,12 +13,12 @@ import (
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/usecase"
 )
 
-// databaseResponse is the tenant-facing shape of a database row. It
+// tenantDatabaseResponse is the tenant-facing shape of a database row. It
 // reports the public hostname a client connects through, never the
 // internal node address; admin responses keep that separately (see
 // adminDatabaseResponse in admin_handlers.go). PlanID and PriceIDRMonth
 // are nil for a database created without picking a plan.
-type databaseResponse struct {
+type tenantDatabaseResponse struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	SizeGB        int       `json:"size_gb"`
@@ -29,13 +29,13 @@ type databaseResponse struct {
 	PriceIDRMonth *int64    `json:"price_idr_month"`
 }
 
-func toDatabaseResponse(d entities.Database) databaseResponse {
+func toDatabaseResponse(d entities.Database) tenantDatabaseResponse {
 	var publicHost *string
 	if d.Slug != nil {
 		h := usecase.PublicHost(*d.Slug)
 		publicHost = &h
 	}
-	return databaseResponse{
+	return tenantDatabaseResponse{
 		ID:            d.ID,
 		Name:          d.Name,
 		SizeGB:        d.SizeGB,
@@ -56,7 +56,7 @@ func (h *Handler) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]databaseResponse, len(rows))
+	out := make([]tenantDatabaseResponse, len(rows))
 	for i, d := range rows {
 		out[i] = toDatabaseResponse(d)
 	}
@@ -78,7 +78,7 @@ func (h *Handler) handleGetDatabase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toDatabaseResponse(d))
 }
 
-type createDatabaseRequest struct {
+type createTenantDatabaseRequest struct {
 	Name   string  `json:"name"`
 	SizeGB *int    `json:"size_gb"`
 	PlanID *string `json:"plan_id"`
@@ -190,7 +190,7 @@ func validateCreateDatabaseRequest(name string, sizeGB int) string {
 // plan_id, the plan must exist and be active, size_gb comes from the
 // plan, and a size_gb the caller also sent must agree with it — this
 // never silently picks one over the other.
-func (h *Handler) resolveDatabasePlan(ctx context.Context, req createDatabaseRequest) (sizeGB int, planID *string, priceIDRMonth int64, errMsg string, errStatus int) {
+func (h *Handler) resolveDatabasePlan(ctx context.Context, req createTenantDatabaseRequest) (sizeGB int, planID *string, priceIDRMonth int64, errMsg string, errStatus int) {
 	if req.PlanID == nil {
 		if req.SizeGB == nil || *req.SizeGB < 1 || *req.SizeGB > 20 {
 			return 0, nil, 0, "size_gb must be between 1 and 20", http.StatusBadRequest
@@ -216,7 +216,7 @@ func (h *Handler) resolveDatabasePlan(ctx context.Context, req createDatabaseReq
 func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r)
 
-	var req createDatabaseRequest
+	var req createTenantDatabaseRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
