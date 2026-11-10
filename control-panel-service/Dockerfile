@@ -17,6 +17,7 @@ COPY go.work go.work.sum ./
 COPY control-panel-service/go.mod control-panel-service/go.sum control-panel-service/
 COPY node-agent-service/go.mod node-agent-service/go.sum node-agent-service/
 COPY router-service/go.mod router-service/go.sum router-service/
+COPY contracts/go.mod contracts/
 RUN go -C control-panel-service mod download
 
 COPY . .

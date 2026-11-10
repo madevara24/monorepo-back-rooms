@@ -41,6 +41,7 @@ jobs:
             control:
               - 'control-panel-service/**'
               - 'control-panel-web/**'
+              - 'contracts/**'
               - 'dokploy-compose.yml'
               - '.github/workflows/deploy.yml'
             router:

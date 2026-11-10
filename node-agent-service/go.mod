@@ -5,7 +5,10 @@ go 1.26.0
 require (
 	github.com/docker/docker v27.3.1+incompatible
 	github.com/docker/go-connections v0.5.0
+	github.com/madevara24/monorepo-back-rooms/contracts v0.0.0
 )
+
+replace github.com/madevara24/monorepo-back-rooms/contracts => ../contracts
 
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
