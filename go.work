@@ -4,4 +4,5 @@ use (
 	./router-service
 	./control-panel-service
 	./node-agent-service
+	./contracts
 )

@@ -52,7 +52,7 @@ func newTestNode(docker *fakeHeartbeatDocker) *Node {
 	}
 }
 
-// decodeHeartbeatBody is a local copy of heartbeatRequest's shape, kept
+// decodeHeartbeatBody is a local copy of contracts.HeartbeatRequest's shape, kept
 // separate from the production struct so the test fails if the wire
 // format silently changes.
 type decodedHeartbeat struct {

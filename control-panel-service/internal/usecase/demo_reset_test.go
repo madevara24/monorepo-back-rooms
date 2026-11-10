@@ -12,24 +12,24 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/integration"
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/repository"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/repository/storetest"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/usecase"
 )
 
 type fakeDemoAgent struct {
-	counts integration.ResetCounts
+	counts contracts.ResetCounts
 	err    error
 	calls  int
 }
 
-func (f *fakeDemoAgent) ResetDemo(context.Context, string) (integration.ResetCounts, error) {
+func (f *fakeDemoAgent) ResetDemo(context.Context, string) (contracts.ResetCounts, error) {
 	f.calls++
 	return f.counts, f.err
 }
 
-func (f *fakeDemoAgent) ListDatabases(context.Context, string) ([]integration.Database, error) {
+func (f *fakeDemoAgent) ListDatabases(context.Context, string) ([]contracts.Database, error) {
 	return nil, nil
 }
 
@@ -109,7 +109,7 @@ func TestDemoResetCleansBothPlanesAndKeepsSeed(t *testing.T) {
 	seedResetFixtures(t, db)
 	pool := openResetPool(t, db)
 
-	agent := &fakeDemoAgent{counts: integration.ResetCounts{Containers: 2, Volumes: 2, Orphans: 1}}
+	agent := &fakeDemoAgent{counts: contracts.ResetCounts{Containers: 2, Volumes: 2, Orphans: 1}}
 	reset := &usecase.DemoReset{
 		DB:         pool,
 		Agent:      agent,

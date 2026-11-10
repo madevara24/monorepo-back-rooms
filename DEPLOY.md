@@ -7,6 +7,7 @@ Merging to `main` deploys. `auto_merge: true` in the task pipeline is production
 | `control-panel-service`, `control-panel-web` | Dokploy app `mbr` | yes | `control-panel-service/**`, `control-panel-web/**`, `dokploy-compose.yml` |
 | `router-service` | SSH container deploy of `mbr-router-service` on KKB (no Dokploy app) | yes | `router-service/**`, `dokploy-compose.router.yml` |
 | `node-agent-service` | Manual binary on each data VPS (systemd) | no; explicit manual exception | n/a; every change includes the rebuild/restart runbook |
+| `contracts` | Built into `mbr-api` as part of the Dokploy app `mbr` | yes, via the `control` path filter | `contracts/**`; manual follow-up: rebuild and restart `mbr-node` on the data host with the `node-agent-service` runbook above |
 
 ## New stack checklist
 

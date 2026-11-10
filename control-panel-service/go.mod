@@ -4,9 +4,12 @@ go 1.26.0
 
 require (
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/madevara24/monorepo-back-rooms/contracts v0.0.0
 	github.com/pressly/goose/v3 v3.26.0
 	golang.org/x/crypto v0.48.0
 )
+
+replace github.com/madevara24/monorepo-back-rooms/contracts => ../contracts
 
 require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect

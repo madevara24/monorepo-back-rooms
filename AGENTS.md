@@ -84,3 +84,4 @@ See the deploy contract above and `DEPLOY.md` for the stack map and path filters
 - Keep the control and data planes separate; a tenant must not be able to starve the API.
 - The tenant volume is fixed-size. Alert at 80% and 90%, and keep a reserve above the plan size: Postgres ENOSPC can force crash recovery.
 - Do not add a real payment gateway, PITR, replicas, or multiple nodes without a task.
+- Every JSON body exchanged between `control-panel-service` and `node-agent-service` is declared exactly once, in `contracts/`, exported. A service must never declare its own copy of a wire struct.

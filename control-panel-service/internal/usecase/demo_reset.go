@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/entities"
-	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/integration"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/pkg/password"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/repository"
 )
@@ -31,13 +31,13 @@ var ErrResetInProgress = errors.New("demo reset already running")
 // ResetResult is the state after a run plus what the agent removed.
 type ResetResult struct {
 	State  entities.DemoState
-	Counts integration.ResetCounts
+	Counts contracts.ResetCounts
 }
 
 // DemoAgent is the subset of the agent client the reset needs.
 type DemoAgent interface {
-	ResetDemo(ctx context.Context, address string) (integration.ResetCounts, error)
-	ListDatabases(ctx context.Context, address string) ([]integration.Database, error)
+	ResetDemo(ctx context.Context, address string) (contracts.ResetCounts, error)
+	ListDatabases(ctx context.Context, address string) ([]contracts.Database, error)
 }
 
 // DemoReset owns the 30-minute demo lifecycle: it cleans the data plane,
@@ -115,7 +115,7 @@ func (d *DemoReset) Reset(ctx context.Context, trigger string) (ResetResult, err
 		defer d.Gate.Unlock()
 	}
 
-	var counts integration.ResetCounts
+	var counts contracts.ResetCounts
 	fail := func(cause error) (ResetResult, error) {
 		recordCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/repository"
 )
@@ -153,16 +154,16 @@ func (n *Node) CreateDatabase(ctx context.Context, id string, sizeGB int, passwo
 // ResetDemo removes every tenant container and loop volume on this host,
 // then sweeps orphan images and mounts. It is idempotent and is only
 // reachable when demo mode is enabled.
-func (n *Node) ResetDemo(ctx context.Context) (entities.ResetCounts, error) {
+func (n *Node) ResetDemo(ctx context.Context) (contracts.ResetCounts, error) {
 	n.createMu.Lock()
 	defer n.createMu.Unlock()
 
 	containers, err := n.Docker.ListTenantContainers(ctx)
 	if err != nil {
-		return entities.ResetCounts{}, fmt.Errorf("list tenant containers: %w", err)
+		return contracts.ResetCounts{}, fmt.Errorf("list tenant containers: %w", err)
 	}
 
-	var counts entities.ResetCounts
+	var counts contracts.ResetCounts
 	var errs []error
 	for _, c := range containers {
 		if err := n.Docker.RemoveTenantContainer(ctx, c.ContainerID); err != nil {
