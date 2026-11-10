@@ -1,4 +1,4 @@
-# Night Signal — `control-web` design
+# Night Signal — `control-panel-web` design
 
 A calm infrastructure console, not a fake terminal. Dark default, a working light mode, and real state instead of decoration.
 

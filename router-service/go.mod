@@ -1,4 +1,4 @@
-module github.com/madevara24/monorepo-back-rooms/connection-router
+module github.com/madevara24/monorepo-back-rooms/router-service
 
 go 1.26.0
 

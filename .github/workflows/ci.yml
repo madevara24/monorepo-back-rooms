@@ -66,25 +66,25 @@ jobs:
           working-directory: node-agent-service
       - run: go test ./...
 
-  connection-router:
-    name: Go (connection-router)
+  router-service:
+    name: Go (router-service)
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: connection-router
+        working-directory: router-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: connection-router/go.mod
+          go-version-file: router-service/go.mod
       - run: go vet ./...
       - uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
-          working-directory: connection-router
+          working-directory: router-service
       - run: go test ./...
       - name: Build the router image
-        run: docker build -f connection-router/Dockerfile .
+        run: docker build -f router-service/Dockerfile .
         working-directory: ${{ github.workspace }}
 
   web:
@@ -92,14 +92,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: control-web
+        working-directory: control-panel-web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: control-web/package-lock.json
+          cache-dependency-path: control-panel-web/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build

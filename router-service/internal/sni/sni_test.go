@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/sni"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/sni"
 )
 
 // buildClientHello assembles a minimal (but structurally valid)

@@ -6,7 +6,7 @@ import "sync/atomic"
 // handshake path they took. GET /healthz reports these so an operator
 // can confirm, from outside, that clients are actually negotiating
 // the way the router expects (see the migration runbook in
-// connection-router/README.md).
+// router-service/README.md).
 type Metrics struct {
 	DirectTLS         atomic.Int64
 	SSLRequest        atomic.Int64

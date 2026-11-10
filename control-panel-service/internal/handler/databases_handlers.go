@@ -86,7 +86,7 @@ type createDatabaseRequest struct {
 
 // defaultPricePerGBIDRMonth is the flat per-GB price charged when a
 // database is created without picking a plan, e.g. through
-// POST /api/admin/databases. It mirrors the price control-web has always
+// POST /api/admin/databases. It mirrors the price control-panel-web has always
 // charged for a free-form size_gb.
 const defaultPricePerGBIDRMonth = 10000
 

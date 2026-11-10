@@ -8,5 +8,5 @@
 ## Checks
 
 - [ ] `go vet` / `go test` for changed modules
-- [ ] `npm run check` / `npm run build` for `control-web`
+- [ ] `npm run check` / `npm run build` for `control-panel-web`
 - [ ] The browser click-through for UI changes

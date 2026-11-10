@@ -37,7 +37,7 @@ func PublicHost(slug string) string {
 // slug and password. The password is only ever available to the caller
 // once, at creation time.
 //
-// The connection router (connection-router/) replaced nginx's
+// The connection router (router-service/) replaced nginx's
 // ssl_preread on :5432: it reads the SNI out of a client's normal
 // SSLRequest-then-ClientHello handshake, so sslnegotiation=direct is
 // no longer required and is dropped here. sslrootcert=system points

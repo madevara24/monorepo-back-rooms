@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 // writeAtomic mirrors control-panel-service's integration.WriteAtomic:

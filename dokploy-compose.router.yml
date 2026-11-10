@@ -1,8 +1,8 @@
 services:
-  mbr-router:
+  mbr-router-service:
     build:
       context: .
-      dockerfile: connection-router/Dockerfile
+      dockerfile: router-service/Dockerfile
     restart: unless-stopped
     environment:
       ROUTER_ADDR: ":15432"

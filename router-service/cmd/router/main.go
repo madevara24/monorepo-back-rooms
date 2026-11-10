@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/config"
-	container "github.com/madevara24/monorepo-back-rooms/connection-router/internal"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/config"
+	container "github.com/madevara24/monorepo-back-rooms/router-service/internal"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 // commit is stamped at build time with -ldflags "-X main.commit=<sha>".

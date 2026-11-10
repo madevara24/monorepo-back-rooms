@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/handler"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/proxy"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/handler"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/proxy"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 func TestHandleHealthz(t *testing.T) {

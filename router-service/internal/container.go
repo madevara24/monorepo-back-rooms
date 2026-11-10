@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/config"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/handler"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/proxy"
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/config"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/handler"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/proxy"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 // Container holds every long-lived dependency cmd/router runs: the

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # Build context is the repo root (see dokploy-compose.router.yml:
-# `dockerfile: connection-router/Dockerfile`), because go.work ties
+# `dockerfile: router-service/Dockerfile`), because go.work ties
 # this module to control-panel-service and node-agent-service, and all
 # three must be present for `go build` to resolve the workspace.
 FROM golang:1.26-alpine AS build
@@ -14,14 +14,14 @@ WORKDIR /src
 ARG COMMIT_SHA=""
 
 COPY go.work go.work.sum ./
-COPY connection-router/go.mod connection-router/go.sum connection-router/
+COPY router-service/go.mod router-service/go.sum router-service/
 COPY control-panel-service/go.mod control-panel-service/go.sum control-panel-service/
 COPY node-agent-service/go.mod node-agent-service/go.sum node-agent-service/
-RUN go -C connection-router mod download
+RUN go -C router-service mod download
 
 COPY . .
 RUN commit="${COMMIT_SHA:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}" && \
-    CGO_ENABLED=0 GOOS=linux go -C connection-router build -trimpath -ldflags "-s -w -X main.commit=${commit}" -o /out/router ./cmd/router
+    CGO_ENABLED=0 GOOS=linux go -C router-service build -trimpath -ldflags "-s -w -X main.commit=${commit}" -o /out/router ./cmd/router
 
 # The router listens on :15432, an unprivileged port, so it needs no
 # NET_BIND_SERVICE capability; USER 65532:65532 (distroless's "nonuser")

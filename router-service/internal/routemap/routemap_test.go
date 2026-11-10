@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/madevara24/monorepo-back-rooms/connection-router/internal/routemap"
+	"github.com/madevara24/monorepo-back-rooms/router-service/internal/routemap"
 )
 
 func TestParseValid(t *testing.T) {

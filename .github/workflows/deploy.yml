@@ -40,11 +40,11 @@ jobs:
           filters: |
             control:
               - 'control-panel-service/**'
-              - 'control-web/**'
+              - 'control-panel-web/**'
               - 'dokploy-compose.yml'
               - '.github/workflows/deploy.yml'
             router:
-              - 'connection-router/**'
+              - 'router-service/**'
               - 'dokploy-compose.router.yml'
               - '.github/workflows/deploy.yml'
 
@@ -94,13 +94,13 @@ jobs:
           echo "timed out after 300s waiting for /healthz to report $GITHUB_SHA (last seen commit: '$last_seen')" >&2
           exit 1
 
-  # mbr-router has no Dokploy app: it's a single container run directly
-  # over SSH, built on the runner and shipped as a docker save|gzip
-  # stream, so a routine control-plane deploy (the `deploy` job above)
-  # never touches it. mbr-router's GET /healthz is published to host
-  # loopback only (not through Traefik), so it's polled over SSH, not a
-  # public URL. See connection-router/README.md for the migration and
-  # rollback runbook.
+  # mbr-router-service has no Dokploy app: it's a single container run
+  # directly over SSH, built on the runner and shipped as a docker
+  # save|gzip stream, so a routine control-plane deploy (the `deploy`
+  # job above) never touches it. mbr-router-service's GET /healthz is
+  # published to host loopback only (not through Traefik), so it's
+  # polled over SSH, not a public URL. See router-service/README.md for
+  # the migration and rollback runbook.
   deploy-router:
     name: Deploy router
     needs: [gate, changes]
@@ -122,16 +122,16 @@ jobs:
 
       - name: Build the router image
         run: |
-          docker build -f connection-router/Dockerfile \
+          docker build -f router-service/Dockerfile \
             --build-arg COMMIT_SHA="$GITHUB_SHA" \
-            -t "mbr-router:$GITHUB_SHA" .
+            -t "mbr-router-service:$GITHUB_SHA" .
 
       - name: Ship the image to the VPS
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          docker save "mbr-router:$GITHUB_SHA" | gzip | \
+          docker save "mbr-router-service:$GITHUB_SHA" | gzip | \
             ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" 'docker load'
 
       - name: Run the new container
@@ -140,13 +140,13 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
           ssh -i ~/.ssh/id_ed25519 -o UserKnownHostsFile=~/.ssh/known_hosts "$VPS_USER@$VPS_HOST" bash -s <<SCRIPT
-          docker rm -f mbr-router || true
-          docker run -d --name mbr-router --restart unless-stopped \
+          docker rm -f mbr-router mbr-router-service || true
+          docker run -d --name mbr-router-service --restart unless-stopped \
             --log-opt max-size=10m --log-opt max-file=3 \
             -p 5432:15432 \
             -p 127.0.0.1:9099:9099 \
             -v /etc/mbr/routes:/etc/mbr/routes:ro \
-            mbr-router:$GITHUB_SHA
+            mbr-router-service:$GITHUB_SHA
           SCRIPT
 
       - name: Wait for the router's /healthz to report the deployed commit
