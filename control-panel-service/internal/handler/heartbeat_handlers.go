@@ -5,53 +5,12 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/pkg/session"
 	"github.com/madevara24/monorepo-back-rooms/control-panel-service/internal/repository"
 )
-
-// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
-// mirror the shapes node-agent-service/internal/usecase's
-// heartbeatContainer, heartbeatConnectionMetrics, and heartbeatCapacity
-// send. heartbeatRequest mirrors node-agent-service/internal/usecase's
-// heartbeatRequest; notably it carries no agent version field, so a
-// heartbeat never updates nodes.version.
-type heartbeatContainer struct {
-	ID      string                      `json:"id"`
-	Host    string                      `json:"host"`
-	Port    int                         `json:"port"`
-	Status  string                      `json:"status"`
-	Metrics *heartbeatConnectionMetrics `json:"metrics,omitempty"`
-}
-
-// heartbeatConnectionMetrics is one container's connection-pressure
-// snapshot. It is only present on heartbeats where the agent actually
-// collected metrics (every metricsInterval, not every heartbeat).
-type heartbeatConnectionMetrics struct {
-	Active                       int       `json:"active"`
-	Idle                         int       `json:"idle"`
-	IdleInTransaction            int       `json:"idle_in_transaction"`
-	MaxConnections               int       `json:"max_connections"`
-	SuperuserReservedConnections int       `json:"superuser_reserved_connections"`
-	MemoryLimitBytes             int64     `json:"memory_limit_bytes"`
-	CollectedAt                  time.Time `json:"collected_at"`
-}
-
-type heartbeatCapacity struct {
-	PortRangeMin int `json:"port_range_min"`
-	PortRangeMax int `json:"port_range_max"`
-	PortsTotal   int `json:"ports_total"`
-	PortsUsed    int `json:"ports_used"`
-}
-
-type heartbeatRequest struct {
-	NodeID     string               `json:"node_id"`
-	Host       string               `json:"host"`
-	Capacity   heartbeatCapacity    `json:"capacity"`
-	Containers []heartbeatContainer `json:"containers"`
-}
 
 // handleAgentHeartbeat records an mbr-node agent's periodic report: its
 // capacity and the tenant containers it currently sees. The agent
@@ -74,7 +33,7 @@ func (h *Handler) handleAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req heartbeatRequest
+	var req contracts.HeartbeatRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
