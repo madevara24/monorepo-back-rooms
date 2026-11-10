@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-// TestHeartbeatGolden pins the exact JSON bytes json.Marshal emits for each
-// heartbeat wire type: field names, omitempty, and the time format. A
-// field rename must fail this test.
-func TestHeartbeatGolden(t *testing.T) {
+// TestWireGolden pins the exact JSON bytes json.Marshal emits for each
+// wire type: field names, omitempty, and the time format. A field rename
+// must fail this test.
+func TestWireGolden(t *testing.T) {
 	collectedAt := time.Date(2026, 1, 2, 15, 4, 5, 123456789, time.UTC)
 
 	cases := []struct {
@@ -99,6 +99,34 @@ func TestHeartbeatGolden(t *testing.T) {
 				},
 			},
 			want: `{"node_id":"node-1","host":"10.0.0.5","capacity":{"port_range_min":21000,"port_range_max":21999,"ports_total":1000,"ports_used":1},"containers":[{"id":"db-a","host":"10.0.0.5","port":21000,"status":"running","metrics":{"active":71,"idle":2,"idle_in_transaction":0,"max_connections":100,"superuser_reserved_connections":3,"memory_limit_bytes":536870912,"collected_at":"2026-01-02T15:04:05.123456789Z"}}]}`,
+		},
+		{
+			name: "CreateDatabaseRequest",
+			v: CreateDatabaseRequest{
+				ID:       "db-a",
+				SizeGB:   5,
+				Password: "secret",
+			},
+			want: `{"id":"db-a","size_gb":5,"password":"secret"}`,
+		},
+		{
+			name: "Database",
+			v: Database{
+				ID:     "db-a",
+				Host:   "10.0.0.5",
+				Port:   21000,
+				Status: "running",
+			},
+			want: `{"id":"db-a","host":"10.0.0.5","port":21000,"status":"running"}`,
+		},
+		{
+			name: "ResetCounts",
+			v: ResetCounts{
+				Containers: 2,
+				Volumes:    2,
+				Orphans:    1,
+			},
+			want: `{"containers_deleted":2,"volumes_deleted":2,"orphans_deleted":1}`,
 		},
 	}
 

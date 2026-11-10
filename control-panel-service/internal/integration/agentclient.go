@@ -13,17 +13,9 @@ import (
 	"io"
 	"net/http"
 	"time"
-)
 
-// Database is the agent's view of a tenant container, returned by
-// POST /v1/databases. Its shape matches node-agent-service's
-// databaseResponse.
-type Database struct {
-	ID     string `json:"id"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Status string `json:"status"`
-}
+	"github.com/madevara24/monorepo-back-rooms/contracts"
+)
 
 // Client calls a single mbr-node agent over HTTP(S).
 type Client struct {
@@ -61,24 +53,17 @@ func NewWithHTTPClient(httpClient *http.Client) *Client {
 	return &Client{httpClient: httpClient}
 }
 
-// ResetCounts is the agent's report after a bulk demo reset.
-type ResetCounts struct {
-	Containers int `json:"containers_deleted"`
-	Volumes    int `json:"volumes_deleted"`
-	Orphans    int `json:"orphans_deleted"`
-}
-
 // ResetDemo asks the agent to remove every tenant container, volume, and
 // orphan on its host. It is a no-op on an already-clean host.
-func (c *Client) ResetDemo(ctx context.Context, address string) (ResetCounts, error) {
-	var out ResetCounts
+func (c *Client) ResetDemo(ctx context.Context, address string) (contracts.ResetCounts, error) {
+	var out contracts.ResetCounts
 	err := c.do(ctx, http.MethodPost, address+"/v1/demo/reset", nil, &out)
 	return out, err
 }
 
 // ListDatabases reads the agent's actual tenant container list.
-func (c *Client) ListDatabases(ctx context.Context, address string) ([]Database, error) {
-	var out []Database
+func (c *Client) ListDatabases(ctx context.Context, address string) ([]contracts.Database, error) {
+	var out []contracts.Database
 	err := c.do(ctx, http.MethodGet, address+"/v1/databases", nil, &out)
 	return out, err
 }
@@ -86,17 +71,13 @@ func (c *Client) ListDatabases(ctx context.Context, address string) ([]Database,
 // CreateDatabase calls the agent's POST /v1/databases, asking it to
 // provision (or, if it already exists, confirm) a tenant container.
 // address is the node's address as stored in nodes.address.
-func (c *Client) CreateDatabase(ctx context.Context, address, id string, sizeGB int, password string) (Database, error) {
-	body, err := json.Marshal(struct {
-		ID       string `json:"id"`
-		SizeGB   int    `json:"size_gb"`
-		Password string `json:"password"`
-	}{id, sizeGB, password})
+func (c *Client) CreateDatabase(ctx context.Context, address, id string, sizeGB int, password string) (contracts.Database, error) {
+	body, err := json.Marshal(contracts.CreateDatabaseRequest{ID: id, SizeGB: sizeGB, Password: password})
 	if err != nil {
-		return Database{}, err
+		return contracts.Database{}, err
 	}
 
-	var out Database
+	var out contracts.Database
 	err = c.do(ctx, http.MethodPost, address+"/v1/databases", bytes.NewReader(body), &out)
 	return out, err
 }

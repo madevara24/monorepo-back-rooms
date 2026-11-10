@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/usecase"
 )
@@ -41,31 +42,17 @@ func (h *Handler) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-type databaseResponse struct {
-	ID     string `json:"id"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Status string `json:"status"`
-}
-
-func toDatabaseResponse(host string, c entities.Container) databaseResponse {
-	return databaseResponse{ID: c.DatabaseID, Host: host, Port: c.Port, Status: c.Status}
-}
-
-type capacityResponse struct {
-	PortRangeMin int `json:"port_range_min"`
-	PortRangeMax int `json:"port_range_max"`
-	PortsTotal   int `json:"ports_total"`
-	PortsUsed    int `json:"ports_used"`
+func toDatabaseResponse(host string, c entities.Container) contracts.Database {
+	return contracts.Database{ID: c.DatabaseID, Host: host, Port: c.Port, Status: c.Status}
 }
 
 type nodeResponse struct {
-	NodeID     string             `json:"node_id"`
-	Host       string             `json:"host"`
-	Version    string             `json:"version"`
-	Capacity   capacityResponse   `json:"capacity"`
-	UsedPorts  []int              `json:"used_ports"`
-	Containers []databaseResponse `json:"containers"`
+	NodeID     string               `json:"node_id"`
+	Host       string               `json:"host"`
+	Version    string               `json:"version"`
+	Capacity   contracts.Capacity   `json:"capacity"`
+	UsedPorts  []int                `json:"used_ports"`
+	Containers []contracts.Database `json:"containers"`
 }
 
 func (h *Handler) handleGetNode(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +62,7 @@ func (h *Handler) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out := make([]databaseResponse, len(status.Containers))
+	out := make([]contracts.Database, len(status.Containers))
 	for i, c := range status.Containers {
 		out[i] = toDatabaseResponse(status.Host, c)
 	}
@@ -84,7 +71,7 @@ func (h *Handler) handleGetNode(w http.ResponseWriter, r *http.Request) {
 		NodeID:  status.NodeID,
 		Host:    status.Host,
 		Version: status.Version,
-		Capacity: capacityResponse{
+		Capacity: contracts.Capacity{
 			PortRangeMin: status.PortRangeMin,
 			PortRangeMax: status.PortRangeMax,
 			PortsTotal:   status.PortsTotal,
@@ -101,21 +88,15 @@ func (h *Handler) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not list containers")
 		return
 	}
-	out := make([]databaseResponse, len(containers))
+	out := make([]contracts.Database, len(containers))
 	for i, c := range containers {
 		out[i] = toDatabaseResponse(h.Node.HostAddress, c)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-type createDatabaseRequest struct {
-	ID       string `json:"id"`
-	SizeGB   int    `json:"size_gb"`
-	Password string `json:"password"`
-}
-
 func (h *Handler) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
-	var req createDatabaseRequest
+	var req contracts.CreateDatabaseRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

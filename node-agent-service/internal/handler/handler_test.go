@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/madevara24/monorepo-back-rooms/contracts"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/entities"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/handler"
 	"github.com/madevara24/monorepo-back-rooms/node-agent-service/internal/usecase"
@@ -268,7 +269,7 @@ func TestCreateDatabaseIsIdempotent(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("first POST /v1/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
 	}
-	var first databaseResponse
+	var first contracts.Database
 	decode(t, resp, &first)
 	if first.ID != "db-b" || first.Host != "10.0.0.5" || first.Status != "running" || first.Port < 21000 || first.Port > 21002 {
 		t.Fatalf("create response = %+v, unexpected", first)
@@ -281,7 +282,7 @@ func TestCreateDatabaseIsIdempotent(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("repeat POST /v1/databases = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	var second databaseResponse
+	var second contracts.Database
 	decode(t, resp, &second)
 	if second != first {
 		t.Fatalf("repeat create response = %+v, want identical %+v", second, first)
@@ -303,7 +304,7 @@ func TestCreateDatabaseAllocatesFreePort(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /v1/databases = %d, want %d", resp.StatusCode, http.StatusCreated)
 	}
-	var out databaseResponse
+	var out contracts.Database
 	decode(t, resp, &out)
 	if out.Port != 21001 {
 		t.Fatalf("allocated port = %d, want 21001 (21000 already used)", out.Port)
@@ -369,7 +370,7 @@ func TestCreateDatabaseRetryableAfterStartFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/databases: %v", err)
 	}
-	var list []databaseResponse
+	var list []contracts.Database
 	decode(t, resp, &list)
 	if len(list) != 0 {
 		t.Fatalf("GET /v1/databases after failed start = %+v, want no orphaned container", list)
@@ -380,7 +381,7 @@ func TestCreateDatabaseRetryableAfterStartFailure(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("retry POST /v1/databases after clearing start error = %d, want %d (id must be retryable, not stuck)", resp.StatusCode, http.StatusCreated)
 	}
-	var out databaseResponse
+	var out contracts.Database
 	decode(t, resp, &out)
 	if out.ID != "db-f" || out.Status != "running" {
 		t.Fatalf("retry create response = %+v, unexpected", out)
@@ -408,7 +409,7 @@ func TestListAndDeleteDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /v1/databases: %v", err)
 	}
-	var list []databaseResponse
+	var list []contracts.Database
 	decode(t, resp, &list)
 	if len(list) != 1 || list[0].ID != "db-e" {
 		t.Fatalf("GET /v1/databases = %+v, want exactly db-e", list)
@@ -461,13 +462,6 @@ func TestSnapshotRoutesAreGated(t *testing.T) {
 	_ = resp.Body.Close()
 }
 
-type databaseResponse struct {
-	ID     string `json:"id"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Status string `json:"status"`
-}
-
 func TestResetDemoRemovesTenantStateAndIsIdempotent(t *testing.T) {
 	docker := newFakeDocker()
 	volumes := newFakeVolumes()
@@ -492,7 +486,7 @@ func TestResetDemoRemovesTenantStateAndIsIdempotent(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("reset = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	var counts entities.ResetCounts
+	var counts contracts.ResetCounts
 	decode(t, resp, &counts)
 	if counts.Containers != 2 || counts.Volumes != 2 || counts.Orphans != 1 {
 		t.Fatalf("reset counts = %+v, want 2 containers, 2 volumes, 1 orphan", counts)
@@ -516,9 +510,9 @@ func TestResetDemoRemovesTenantStateAndIsIdempotent(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("second reset = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
-	var second entities.ResetCounts
+	var second contracts.ResetCounts
 	decode(t, resp, &second)
-	if second != (entities.ResetCounts{}) {
+	if second != (contracts.ResetCounts{}) {
 		t.Fatalf("second reset counts = %+v, want zero", second)
 	}
 }
