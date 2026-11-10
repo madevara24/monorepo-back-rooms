@@ -16,11 +16,11 @@ together by the root `go.work`:
   layering: `entities`, `repository` (Docker/volume adapters), `usecase`
   (provision/delete/reconcile/heartbeat), `handler` (HTTP, its own
   `/healthz`), `internal/container.go`.
-- `connection-router/` — the SNI-routing TCP proxy in front of the shared
+- `router-service/` — the SNI-routing TCP proxy in front of the shared
   tenant port `:5432` (`cmd/router`). See
-  [`connection-router/README.md`](connection-router/README.md) for the
+  [`router-service/README.md`](router-service/README.md) for the
   handshake it implements, its config, and the migration/rollback runbook.
-- `control-web/` — SvelteKit frontend (static build). Routes: `/`,
+- `control-panel-web/` — SvelteKit frontend (static build). Routes: `/`,
   `/signup`, `/login`, `/dashboard`, `/billing`.
 - `compose.yaml` — local control Postgres.
 
@@ -35,7 +35,7 @@ together by the root `go.work`:
 ```bash
 make dev     # starts control Postgres, the API, the node agent, and the web dev server
 make test    # go vet + go test (both modules) + svelte-check
-make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-web/
+make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node + npm run build in control-panel-web/
 ```
 
 Run each service on its own, if needed:
@@ -46,13 +46,13 @@ docker compose up -d control-db   # Postgres 17 on :5432
 go run ./control-panel-service/cmd/api    # :8080, GET /healthz
 go run ./node-agent-service/cmd/node      # :8081, GET /healthz
 
-cd control-web && npm install && npm run dev
+cd control-panel-web && npm install && npm run dev
 ```
 
 The web dev server proxies `/healthz` and `/api` to the API at
-`http://localhost:8080` (see `control-web/vite.config.ts`), so `cmd/api`
+`http://localhost:8080` (see `control-panel-web/vite.config.ts`), so `cmd/api`
 must be running for the home page and the signup/login/dashboard/billing
-pages to work. In production, deploy `control-web`'s static build behind
+pages to work. In production, deploy `control-panel-web`'s static build behind
 the same host as the API so `/healthz` and `/api` resolve same-origin,
 same as the proxy does in dev.
 
@@ -74,7 +74,7 @@ Traefik routing `mbr.madevara.com`:
   at the repo root because `go.work` ties `control-panel-service` to
   `node-agent-service`), port 8080, handles `/api/*` and `/healthz`
   (priority 10).
-- `mbr-web` — built from `control-web/Dockerfile`, port 80, serves
+- `mbr-control-panel-web` — built from `control-panel-web/Dockerfile`, port 80, serves
   everything else on the host (priority 1).
 - `mbr-control-db` — `postgres:17` with a named volume, no published host
   port, only reachable from `mbr-api` on `dokploy-network`.
@@ -114,7 +114,7 @@ Repo secrets, for `.github/workflows/deploy.yml`:
 
 The router's deploy job reuses `VPS_SSH_KEY`, `VPS_KNOWN_HOST`,
 `VPS_USER`, and `VPS_HOST` above; it has no Dokploy app or secret of its
-own (see [Production (connection router)](#production-connection-router)).
+own (see [Production (router service)](#production-router-service)).
 
 ### Deploying
 
@@ -125,8 +125,8 @@ manually:
    web build).
 2. A `changes` job uses `dorny/paths-filter` to decide which stacks
    actually changed: `control` for `control-panel-service/**`,
-   `control-web/**`, and `dokploy-compose.yml`; `router` for
-   `connection-router/**` and `dokploy-compose.router.yml`. A manual
+   `control-panel-web/**`, and `dokploy-compose.yml`; `router` for
+   `router-service/**` and `dokploy-compose.router.yml`. A manual
    `workflow_dispatch` forces both to `true`, so an operator can always
    redeploy either stack without a qualifying push.
 3. A `deploy` job runs when `control` is true. It SSHes into the VPS and
@@ -134,31 +134,31 @@ manually:
    then polls `https://mbr.madevara.com/healthz` for up to 300s until its
    `commit` field equals the deployed commit SHA.
 4. A `deploy-router` job runs when `router` is true. It builds
-   `mbr-router:$GITHUB_SHA` on the runner from `connection-router/Dockerfile`,
+   `mbr-router-service:$GITHUB_SHA` on the runner from `router-service/Dockerfile`,
    streams it to the VPS with `docker save | gzip` over SSH, `docker
-   load`s it there, replaces the running `mbr-router` container with
+   load`s it there, replaces the running `mbr-router-service` container with
    `docker run`, and polls its loopback-only `/healthz` over SSH until
    `commit` matches. See
-   [`connection-router/README.md`](connection-router/README.md#migration-runbook)
+   [`router-service/README.md`](router-service/README.md#migration-runbook)
    for the cutover and rollback runbook.
 
-A control-plane-only change deploys `mbr-api`/`mbr-web` without
-restarting the router, and a router-only change deploys `mbr-router`
+A control-plane-only change deploys `mbr-api`/`mbr-control-panel-web` without
+restarting the router, and a router-only change deploys `mbr-router-service`
 without restarting the API/web — each stack's path filter keeps the
 other's container untouched. Deploys run one at a time
 (`concurrency: group: deploy`), so a merge queued behind an in-flight
 deploy waits instead of racing it. To force a deploy without a
 qualifying push, open the Actions tab and run `Deploy` manually.
 
-## Production (connection router)
+## Production (router service)
 
-`connection-router` deploys on the same VPS as `mbr-api`/`mbr-web`, but
-as a plain `mbr-router` Docker container run directly over SSH, not a
+`router-service` deploys on the same VPS as `mbr-api`/`mbr-control-panel-web`, but
+as a plain `mbr-router-service` Docker container run directly over SSH, not a
 Dokploy app — so a routine control-plane deploy never restarts the
 live `:5432` data path. Full details — the handshake it implements, its
 config, and the migration and rollback runbook for cutting it over from
 nginx — live in
-[`connection-router/README.md`](connection-router/README.md).
+[`router-service/README.md`](router-service/README.md).
 
 ## Production (data plane)
 

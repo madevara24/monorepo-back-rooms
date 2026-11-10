@@ -14,7 +14,7 @@ A new deployable stack is not done until:
 2. `.github/workflows/deploy.yml` has a push-to-main job with a path filter for that stack;
 3. unrelated stack changes cannot restart it.
 
-If a new stack lacks a deploy path, the task is blocked and `auto_merge` stays false. A one-time cutover exception must be temporary and linked to a follow-up task. `connection-router` went through that cutover in `MBR-19`: it deploys as its own path-filtered job in `deploy.yml`, but as a plain `mbr-router` Docker container run and restarted over SSH, not a Dokploy app — there is no `mbr-router` Dokploy app or secret. Every merge is live only after the stack's health check reports the merged commit.
+If a new stack lacks a deploy path, the task is blocked and `auto_merge` stays false. A one-time cutover exception must be temporary and linked to a follow-up task. `router-service` went through that cutover in `MBR-19`: it deploys as its own path-filtered job in `deploy.yml`, but as a plain `mbr-router-service` Docker container run and restarted over SSH, not a Dokploy app — there is no `mbr-router-service` Dokploy app or secret. Every merge is live only after the stack's health check reports the merged commit.
 
 The stack-to-deploy map and current exceptions are in `DEPLOY.md`.
 
@@ -24,15 +24,15 @@ Two planes, never on the same host.
 
 | Plane | What runs there |
 |---|---|
-| Control | `control-panel-service` (`cmd/api`, Go), `control-web/` (SvelteKit static), `connection-router` (`cmd/router`, Go), control Postgres 17. Existing VPS, Dokploy, `mbr.madevara.com`. |
+| Control | `control-panel-service` (`cmd/api`, Go), `control-panel-web/` (SvelteKit static), `router-service` (`cmd/router`, Go), control Postgres 17. Existing VPS, Dokploy, `mbr.madevara.com`. |
 | Data | `node-agent-service` (`cmd/node`, `mbr-node`), Docker, one Postgres container per tenant. Separate VPS. |
 | Storage | S3 bucket for snapshots, written by the agent. |
 
-Each deployable stack is its own top-level folder and Go module (`control-panel-service/go.mod`, `node-agent-service/go.mod`, `connection-router/go.mod`, tied together by the root `go.work`), with a layer-first interior: `entities` (models), `repository` (pgx/Docker), `usecase` (business logic), `handler` (net/http), and a `container.go` composition root.
+Each deployable stack is its own top-level folder and Go module (`control-panel-service/go.mod`, `node-agent-service/go.mod`, `router-service/go.mod`, tied together by the root `go.work`), with a layer-first interior: `entities` (models), `repository` (pgx/Docker), `usecase` (business logic), `handler` (net/http), and a `container.go` composition root.
 
 The control plane is the source of truth for users, databases, sizes, status, snapshots, and invoices. The data plane holds the bytes. `mbr-node` is the only process that talks to Docker; the API calls it over mTLS.
 
-Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host port per container; `connection-router` (see `connection-router/README.md`) is the SNI router that makes one shared `:5432` work for every tenant, reading SNI off the TLS ClientHello without ever terminating TLS. TLS is required: `hostssl` only, `sslmode=require` floor.
+Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host port per container; `router-service` (see `router-service/README.md`) is the SNI router that makes one shared `:5432` work for every tenant. It routes by the SNI field of the TLS ClientHello; the Postgres startup packet travels inside the TLS connection, so the router never reads it. TLS is required: `hostssl` only, `sslmode=require` floor.
 
 ## One database's life
 
@@ -45,7 +45,7 @@ Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host po
 
 ## Stack
 
-- Go standard library `net/http` (no framework), pgx, sqlc, goose. Jobs: a `jobs` table with `FOR UPDATE SKIP LOCKED`, not Redis.
+- Go standard library `net/http` (no framework), pgx, goose, hand-written SQL. Jobs: a `jobs` table with `FOR UPDATE SKIP LOCKED`, not Redis.
 - Auth: email and password, argon2id, httpOnly `SameSite=Lax` session cookie. The API is under `/api` on the same host.
 - Frontend: SvelteKit 2 (Svelte 5), TypeScript, Tailwind 4, `adapter-static`. No runtime server.
 - Control Postgres 17. One container per tenant. Provisioned size, enforced by the volume, not measured.
@@ -56,10 +56,10 @@ Tenants connect at `<slug>.db.mbr.madevara.com:<port>`. v1 publishes one host po
 ```bash
 make dev     # control Postgres + api + node + web
 make test    # go vet + go test (all three Go modules) + svelte-check
-make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node ./connection-router/cmd/router + npm run build in control-web/
+make build   # go build ./control-panel-service/cmd/api ./node-agent-service/cmd/node ./router-service/cmd/router + npm run build in control-panel-web/
 ```
 
-`connection-router` is not part of `make dev`: it routes to real tenant hosts by SNI, which local dev has none of, and its route map lives at a production-only, permission-restricted path (`/etc/mbr/routes/mbr-routes.map`). Run and test it on its own (`go run ./connection-router/cmd/router` with `MBR_ROUTES_PATH` pointed at a local map file); see `connection-router/README.md`.
+`router-service` is not part of `make dev`: it routes to real tenant hosts by SNI, which local dev has none of, and its route map lives at a production-only, permission-restricted path (`/etc/mbr/routes/mbr-routes.map`). Run and test it on its own (`go run ./router-service/cmd/router` with `MBR_ROUTES_PATH` pointed at a local map file); see `router-service/README.md`.
 
 ## Pipeline contract
 

@@ -1,4 +1,4 @@
 bin/
-control-web/node_modules/
-control-web/.svelte-kit/
-control-web/build/
+control-panel-web/node_modules/
+control-panel-web/.svelte-kit/
+control-panel-web/build/

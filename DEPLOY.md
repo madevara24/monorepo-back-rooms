@@ -4,8 +4,8 @@ Merging to `main` deploys. `auto_merge: true` in the task pipeline is production
 
 | Stack | Deploy target | Auto on `main` | Path filter |
 |---|---|---|---|
-| `control-panel-service`, `control-web` | Dokploy app `mbr` | yes | `control-panel-service/**`, `control-web/**`, `dokploy-compose.yml` |
-| `connection-router` | SSH container deploy of `mbr-router` on KKB (no Dokploy app) | yes | `connection-router/**`, `dokploy-compose.router.yml` |
+| `control-panel-service`, `control-panel-web` | Dokploy app `mbr` | yes | `control-panel-service/**`, `control-panel-web/**`, `dokploy-compose.yml` |
+| `router-service` | SSH container deploy of `mbr-router-service` on KKB (no Dokploy app) | yes | `router-service/**`, `dokploy-compose.router.yml` |
 | `node-agent-service` | Manual binary on each data VPS (systemd) | no; explicit manual exception | n/a; every change includes the rebuild/restart runbook |
 
 ## New stack checklist
@@ -32,5 +32,6 @@ The demo reset is opt-in on both planes.
 
 ## Current exceptions
 
-- `connection-router`: there is no `mbr-router` Dokploy app or secret. `deploy-router` in `.github/workflows/deploy.yml` builds `mbr-router:$GITHUB_SHA` on the runner, ships it to KKB with `docker save | gzip` over SSH, and runs it directly with `docker run` — see `connection-router/README.md`. This replaced the `MBR-19` manual `workflow_dispatch`-only gate now that the router is live and cut over to `:5432`.
+- `router-service`: there is no `mbr-router-service` Dokploy app or secret. `deploy-router` in `.github/workflows/deploy.yml` builds `mbr-router-service:$GITHUB_SHA` on the runner, ships it to KKB with `docker save | gzip` over SSH, and runs it directly with `docker run` — see `router-service/README.md`. This replaced the `MBR-19` manual `workflow_dispatch`-only gate now that the router is live and cut over to `:5432`.
 - `node-agent-service`: no CI-built artifact; the binary is installed and restarted on each data VPS by hand. This is a documented exception, not a precedent for new stacks.
+- MBR-30 rename: the first deploy after renaming `mbr-web` to `mbr-control-panel-web` can leave the old `mbr-web` container running if Dokploy doesn't remove orphans; the operator checks for it and removes it by hand.

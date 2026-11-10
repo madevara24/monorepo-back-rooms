@@ -5,17 +5,17 @@ dev:
 	@trap 'kill 0' EXIT INT TERM; \
 	go run ./control-panel-service/cmd/api & \
 	go run ./node-agent-service/cmd/node & \
-	(cd control-web && npm run dev) & \
+	(cd control-panel-web && npm run dev) & \
 	wait
 
 test:
 	docker compose up -d control-db
-	go vet ./control-panel-service/... ./node-agent-service/... ./connection-router/...
-	DATABASE_URL_TEST=postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable go test ./control-panel-service/... ./node-agent-service/... ./connection-router/...
-	cd control-web && npm run check
+	go vet ./control-panel-service/... ./node-agent-service/... ./router-service/...
+	DATABASE_URL_TEST=postgres://mbr:mbr@localhost:5432/mbr?sslmode=disable go test ./control-panel-service/... ./node-agent-service/... ./router-service/...
+	cd control-panel-web && npm run check
 
 build:
 	go build -o bin/api ./control-panel-service/cmd/api
 	go build -o bin/node ./node-agent-service/cmd/node
-	go build -o bin/router ./connection-router/cmd/router
-	cd control-web && npm run build
+	go build -o bin/router ./router-service/cmd/router
+	cd control-panel-web && npm run build
